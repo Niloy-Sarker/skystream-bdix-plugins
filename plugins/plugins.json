@@ -10,6 +10,6 @@
     "tvTypes": ["Movie", "TvSeries", "Anime", "AnimeMovie", "Cartoon", "AsianDrama", "Documentary", "OVA", "Others"],
     "baseUrl": "MAIN_URL",
     "iconUrl": "http://new.circleftp.net/static/media/logo.fce2c9029060a10687b8.png",
-    "url": "https://raw.githubusercontent.com/niloy-sarker/skystream-bdix-plugins/refs/heads/main/plugins/circleftp.js"
+    "url": "https://raw.githubusercontent.com/niloy-sarker/skystream-bdix-plugins/refs/heads/release/plugins/circleftp.sky"
   }
 ]
