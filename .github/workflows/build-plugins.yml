@@ -8,6 +8,7 @@ on:
       - 'plugins/*.js'
       - 'plugins/plugins.json'
       - 'bdix_repo.json'
+  workflow_dispatch:
 
 permissions:
   contents: write
