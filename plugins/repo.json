@@ -1,9 +1,0 @@
-{
-  "name": "Niloy's BDIX Repository",
-  "id": "dev.niloy.bdix",
-  "description": "SkyStream BDIX plugins repository",
-  "manifestVersion": 1,
-  "pluginLists": [
-    "https://raw.githubusercontent.com/niloy-sarker/skystream-bdix-plugins/refs/heads/main/plugins/plugins.json"
-  ]
-}
