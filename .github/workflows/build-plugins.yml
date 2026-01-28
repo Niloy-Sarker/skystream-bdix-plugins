@@ -44,27 +44,10 @@ jobs:
             fi
           done
           
-          # Copy and update plugins.json using jq
-          jq '.[].url = "https://raw.githubusercontent.com/${{ github.repository }}/refs/heads/release/plugins/" + .[].internalName + ".sky"' \
-            plugins/plugins.json > release/plugins/plugins.json
-          
-          # Generate repo.json
-          cat > release/plugins/repo.json << 'EOF'
-          {
-            "name": "SkyStream Plugins",
-            "id": "sky.plugins",
-            "description": "Repository of SkyStream plugin manifests",
-            "manifestVersion": 1,
-            "plugins": [
-              "https://raw.githubusercontent.com/${{ github.repository }}/refs/heads/release/plugins/plugins.json"
-            ]
-          }
-          EOF
-          # Fix repo.json with actual repo name
-          sed -i 's|\${{ github.repository }}|${{ github.repository }}|g' release/plugins/repo.json
-          
-          # Copy and update bdix_repo.json
-          sed 's|/refs/heads/main/|/refs/heads/release/|g' bdix_repo.json > release/bdix_repo.json
+          # Copy metadata files as-is
+          cp plugins/plugins.json release/plugins/
+          cp plugins/repo.json release/plugins/
+          cp bdix_repo.json release/
           
           echo "=== Build Complete ==="
           ls -lh release/plugins/
