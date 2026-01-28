@@ -26,20 +26,29 @@ function getManifest() {
 
 function login(callback) {
     if (loginCookie) {
-        callback();
+        callback(true);
         return;
     }
     
-    http_get(MAIN_URL + "/login/demo", commonHeaders, (status, data, cookies) => {
-        if (cookies) {
-            loginCookie = cookies;
-        }
-        callback();
-    });
+    try {
+        http_get(MAIN_URL + "/login/demo", commonHeaders, (status, data, cookies) => {
+            if (status && status >= 200 && status < 400) {
+                if (cookies) {
+                    loginCookie = cookies;
+                }
+                callback(true);
+            } else {
+                // Login failed but continue anyway
+                callback(false);
+            }
+        });
+    } catch (e) {
+        callback(false);
+    }
 }
 
 function getHome(callback) {
-    login(() => {
+    login((success) => {
         const categories = [
             { title: "English", url: MAIN_URL + "/s/category/Foreign/1" },
             { title: "Bangla", url: MAIN_URL + "/s/category/Bangla/1" },
@@ -52,25 +61,44 @@ function getHome(callback) {
         let finalResult = [];
         let pending = categories.length;
         
-        categories.forEach(category => {
+        categories.forEach((category, index) => {
             const headers = Object.assign({}, commonHeaders);
             if (loginCookie) {
                 headers["Cookie"] = loginCookie;
             }
             
-            http_get(category.url, headers, (status, html) => {
-                const items = parseSeriesCards(html);
-                
+            try {
+                http_get(category.url, headers, (status, html) => {
+                    let items = [];
+                    try {
+                        if (html && typeof html === 'string') {
+                            items = parseSeriesCards(html);
+                        }
+                    } catch (e) {
+                        items = [];
+                    }
+                    
+                    finalResult.push({
+                        title: category.title,
+                        Data: items || []
+                    });
+                    
+                    pending--;
+                    if (pending === 0) {
+                        // Return valid JSON even if empty
+                        callback(JSON.stringify(finalResult.length > 0 ? finalResult : []));
+                    }
+                });
+            } catch (e) {
                 finalResult.push({
                     title: category.title,
-                    Data: items
+                    Data: []
                 });
-                
                 pending--;
                 if (pending === 0) {
-                    callback(JSON.stringify(finalResult));
+                    callback(JSON.stringify(finalResult.length > 0 ? finalResult : []));
                 }
-            });
+            }
         });
     });
 }
@@ -163,7 +191,7 @@ function escapeRegex(string) {
 }
 
 function search(query, callback) {
-    login(() => {
+    login((success) => {
         const headers = Object.assign({}, commonHeaders);
         if (loginCookie) {
             headers["Cookie"] = loginCookie;
@@ -175,97 +203,126 @@ function search(query, callback) {
         const postHeaders = Object.assign({}, headers);
         postHeaders["Content-Type"] = "application/x-www-form-urlencoded";
         
-        http_post(searchUrl, formData, postHeaders, (status, html) => {
-            const series = [];
-            
-            // Parse search results
-            const searchItemRegex = /<div class="moviesearchiteam"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/g;
-            let match;
-            
-            while ((match = searchItemRegex.exec(html)) !== null) {
-                const itemHtml = match[1];
-                
-                const urlMatch = /<a\s+href="([^"]+)"/.exec(itemHtml);
-                if (!urlMatch) continue;
-                const url = MAIN_URL + urlMatch[1];
-                
-                const titleMatch = /<div class="searchtitle">([^<]+)<\/div>/.exec(itemHtml);
-                const title = titleMatch ? titleMatch[1].trim() : "";
-                
-                const posterMatch = /<img[^>]+src="([^"]+)"/.exec(itemHtml);
-                const poster = posterMatch ? posterMatch[1] : "";
-                
-                // Check genre for type
-                const genreMatch = /<div class="ganre-wrapper[^"]*">([\s\S]*?)<\/div>/.exec(itemHtml);
-                let type = "TvSeries";
-                if (genreMatch) {
-                    const genreText = genreMatch[1].toLowerCase();
-                    if (genreText.includes("animation") || genreText.includes("anime")) {
-                        type = "Anime";
+        try {
+            http_post(searchUrl, formData, postHeaders, (status, html) => {
+                try {
+                    const series = [];
+                    
+                    if (html && typeof html === 'string') {
+                        // Parse search results
+                        const searchItemRegex = /<div class="moviesearchiteam"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/g;
+                        let match;
+                        
+                        while ((match = searchItemRegex.exec(html)) !== null) {
+                            const itemHtml = match[1];
+                            
+                            const urlMatch = /<a\s+href="([^"]+)"/.exec(itemHtml);
+                            if (!urlMatch) continue;
+                            const url = MAIN_URL + urlMatch[1];
+                            
+                            const titleMatch = /<div class="searchtitle">([^<]+)<\/div>/.exec(itemHtml);
+                            const title = titleMatch ? titleMatch[1].trim() : "";
+                            
+                            const posterMatch = /<img[^>]+src="([^"]+)"/.exec(itemHtml);
+                            const poster = posterMatch ? posterMatch[1] : "";
+                            
+                            // Check genre for type
+                            const genreMatch = /<div class="ganre-wrapper[^"]*">([\s\S]*?)<\/div>/.exec(itemHtml);
+                            let type = "TvSeries";
+                            if (genreMatch) {
+                                const genreText = genreMatch[1].toLowerCase();
+                                if (genreText.includes("animation") || genreText.includes("anime")) {
+                                    type = "Anime";
+                                }
+                            }
+                            
+                            series.push({
+                                name: title,
+                                link: url,
+                                image: poster,
+                                description: "",
+                                type: type
+                            });
+                        }
                     }
+                    
+                    const result = [];
+                    if (series.length > 0) {
+                        result.push({
+                            title: "Search Results",
+                            Data: series
+                        });
+                    }
+                    
+                    callback(JSON.stringify(result));
+                } catch (e) {
+                    callback(JSON.stringify([]));
                 }
-                
-                series.push({
-                    name: title,
-                    link: url,
-                    image: poster,
-                    description: "",
-                    type: type
-                });
-            }
-            
-            const result = [];
-            if (series.length > 0) {
-                result.push({
-                    title: "Search Results",
-                    Data: series
-                });
-            }
-            
-            callback(JSON.stringify(result));
-        });
+            });
+        } catch (e) {
+            callback(JSON.stringify([]));
+        }
     });
 }
 
 function load(url, callback) {
-    login(() => {
+    login((success) => {
         const headers = Object.assign({}, commonHeaders);
         if (loginCookie) {
             headers["Cookie"] = loginCookie;
         }
         
-        http_get(url, headers, (status, html) => {
-            // Extract title
-            const titleMatch = /<div class="movie-detail-content-test"[^>]*>[\s\S]*?<h3[^>]*>([^<]+)<\/h3>/.exec(html);
-            const title = titleMatch ? titleMatch[1].trim() : "";
-            
-            // Alternative title extraction
-            const altTitleMatch = /<h3[^>]*>([^<]+)<\/h3>/.exec(html);
-            const finalTitle = title || (altTitleMatch ? altTitleMatch[1].trim() : "");
-            
-            // Extract poster
-            const imgMatch = /<div class="movie-detail-banner"[^>]*>[\s\S]*?<img[^>]+src="([^"]+)"/.exec(html);
-            const poster = imgMatch ? imgMatch[1] : "";
-            
-            // Extract plot/storyline
-            const plotMatch = /<div class="storyline"[^>]*>([^<]+)<\/div>/.exec(html);
-            const plot = plotMatch ? plotMatch[1].trim() : "";
-            
-            // Extract genres
-            const genres = extractGenres(html);
-            
-            // Determine type based on genres
-            const isAnime = genres.some(g => 
-                g.toLowerCase().includes("animation") || 
-                g.toLowerCase().includes("anime")
-            );
-            const type = isAnime ? "Anime" : "TvSeries";
-            
-            // Extract actors
-            const actors = extractActors(html);
-            
-            // Extract seasons
-            const seasons = extractSeasons(html);
+        try {
+            http_get(url, headers, (status, html) => {
+                try {
+                    if (!html || typeof html !== 'string') {
+                        // Return a valid empty response
+                        callback(JSON.stringify({
+                            url: url,
+                            data: JSON.stringify({ type: "series", episodes: [] }),
+                            title: "Error loading content",
+                            description: "Could not load content from server",
+                            year: 0,
+                            subtitle: "",
+                            image: "",
+                            actors: [],
+                            type: "TvSeries",
+                            episodes: []
+                        }));
+                        return;
+                    }
+                    
+                    // Extract title
+                    const titleMatch = /<div class="movie-detail-content-test"[^>]*>[\s\S]*?<h3[^>]*>([^<]+)<\/h3>/.exec(html);
+                    const title = titleMatch ? titleMatch[1].trim() : "";
+                    
+                    // Alternative title extraction
+                    const altTitleMatch = /<h3[^>]*>([^<]+)<\/h3>/.exec(html);
+                    const finalTitle = title || (altTitleMatch ? altTitleMatch[1].trim() : "Unknown");
+                    
+                    // Extract poster
+                    const imgMatch = /<div class="movie-detail-banner"[^>]*>[\s\S]*?<img[^>]+src="([^"]+)"/.exec(html);
+                    const poster = imgMatch ? imgMatch[1] : "";
+                    
+                    // Extract plot/storyline
+                    const plotMatch = /<div class="storyline"[^>]*>([^<]+)<\/div>/.exec(html);
+                    const plot = plotMatch ? plotMatch[1].trim() : "";
+                    
+                    // Extract genres
+                    const genres = extractGenres(html);
+                    
+                    // Determine type based on genres
+                    const isAnime = genres.some(g => 
+                        g.toLowerCase().includes("animation") || 
+                        g.toLowerCase().includes("anime")
+                    );
+                    const type = isAnime ? "Anime" : "TvSeries";
+                    
+                    // Extract actors
+                    const actors = extractActors(html);
+                    
+                    // Extract seasons
+                    const seasons = extractSeasons(html);
             
             // Now we need to fetch episodes for each season
             if (seasons.length > 0) {
@@ -314,7 +371,36 @@ function load(url, callback) {
                     episodes: []
                 }));
             }
-        });
+                } catch (e) {
+                    // Return a valid error response
+                    callback(JSON.stringify({
+                        url: url,
+                        data: JSON.stringify({ type: "series", episodes: [] }),
+                        title: "Error",
+                        description: "Error parsing content",
+                        year: 0,
+                        subtitle: "",
+                        image: "",
+                        actors: [],
+                        type: "TvSeries",
+                        episodes: []
+                    }));
+                }
+            });
+        } catch (e) {
+            callback(JSON.stringify({
+                url: url,
+                data: JSON.stringify({ type: "series", episodes: [] }),
+                title: "Error",
+                description: "Could not connect to server",
+                year: 0,
+                subtitle: "",
+                image: "",
+                actors: [],
+                type: "TvSeries",
+                episodes: []
+            }));
+        }
     });
 }
 
@@ -464,7 +550,7 @@ function parseSeasonEpisodes(html, seasonNum) {
 }
 
 function loadStreams(url, callback) {
-    login(() => {
+    login((success) => {
         const headers = Object.assign({}, commonHeaders);
         if (loginCookie) {
             headers["Cookie"] = loginCookie;
@@ -482,8 +568,15 @@ function loadStreams(url, callback) {
         }
         
         // Otherwise, try to fetch the page and extract stream
+        try {
         http_get(url, headers, (status, html) => {
+            try {
             const streams = [];
+            
+            if (!html || typeof html !== 'string') {
+                callback(JSON.stringify([]));
+                return;
+            }
             
             // Try to find video link
             const streamMatch = /<a[^>]+href="(http[^"]+\.(?:mkv|mp4|avi)[^"]*)"/.exec(html);
@@ -518,7 +611,13 @@ function loadStreams(url, callback) {
             }
             
             callback(JSON.stringify(streams));
+            } catch (e) {
+                callback(JSON.stringify([]));
+            }
         });
+        } catch (e) {
+            callback(JSON.stringify([]));
+        }
     });
 }
 

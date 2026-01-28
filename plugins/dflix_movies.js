@@ -24,20 +24,29 @@ function getManifest() {
 
 function login(callback) {
     if (loginCookie) {
-        callback();
+        callback(true);
         return;
     }
     
-    http_get(MAIN_URL + "/login/demo", commonHeaders, (status, data, cookies) => {
-        if (cookies) {
-            loginCookie = cookies;
-        }
-        callback();
-    });
+    try {
+        http_get(MAIN_URL + "/login/demo", commonHeaders, (status, data, cookies) => {
+            if (status && status >= 200 && status < 400) {
+                if (cookies) {
+                    loginCookie = cookies;
+                }
+                callback(true);
+            } else {
+                // Login failed but continue anyway
+                callback(false);
+            }
+        });
+    } catch (e) {
+        callback(false);
+    }
 }
 
 function getHome(callback) {
-    login(() => {
+    login((success) => {
         const categories = [
             { title: "Bangla", url: MAIN_URL + "/m/category/Bangla/1" },
             { title: "English", url: MAIN_URL + "/m/category/English/1" },
@@ -50,25 +59,44 @@ function getHome(callback) {
         let finalResult = [];
         let pending = categories.length;
         
-        categories.forEach(category => {
+        categories.forEach((category, index) => {
             const headers = Object.assign({}, commonHeaders);
             if (loginCookie) {
                 headers["Cookie"] = loginCookie;
             }
             
-            http_get(category.url, headers, (status, html) => {
-                const items = parseMovieCards(html);
-                
+            try {
+                http_get(category.url, headers, (status, html) => {
+                    let items = [];
+                    try {
+                        if (html && typeof html === 'string') {
+                            items = parseMovieCards(html);
+                        }
+                    } catch (e) {
+                        items = [];
+                    }
+                    
+                    finalResult.push({
+                        title: category.title,
+                        Data: items || []
+                    });
+                    
+                    pending--;
+                    if (pending === 0) {
+                        // Return valid JSON even if empty
+                        callback(JSON.stringify(finalResult.length > 0 ? finalResult : []));
+                    }
+                });
+            } catch (e) {
                 finalResult.push({
                     title: category.title,
-                    Data: items
+                    Data: []
                 });
-                
                 pending--;
                 if (pending === 0) {
-                    callback(JSON.stringify(finalResult));
+                    callback(JSON.stringify(finalResult.length > 0 ? finalResult : []));
                 }
-            });
+            }
         });
     });
 }
@@ -127,7 +155,7 @@ function parseMovieCards(html) {
 }
 
 function search(query, callback) {
-    login(() => {
+    login((success) => {
         const headers = Object.assign({}, commonHeaders);
         if (loginCookie) {
             headers["Cookie"] = loginCookie;
@@ -135,41 +163,70 @@ function search(query, callback) {
         
         const searchUrl = MAIN_URL + "/m/find/" + encodeURIComponent(query);
         
-        http_get(searchUrl, headers, (status, html) => {
-            const movies = parseMovieCards(html);
-            
-            const result = [];
-            if (movies.length > 0) {
-                result.push({
-                    title: "Search Results",
-                    Data: movies
-                });
-            }
-            
-            callback(JSON.stringify(result));
-        });
+        try {
+            http_get(searchUrl, headers, (status, html) => {
+                try {
+                    let movies = [];
+                    if (html && typeof html === 'string') {
+                        movies = parseMovieCards(html);
+                    }
+                    
+                    const result = [];
+                    if (movies && movies.length > 0) {
+                        result.push({
+                            title: "Search Results",
+                            Data: movies
+                        });
+                    }
+                    
+                    callback(JSON.stringify(result));
+                } catch (e) {
+                    callback(JSON.stringify([]));
+                }
+            });
+        } catch (e) {
+            callback(JSON.stringify([]));
+        }
     });
 }
 
 function load(url, callback) {
-    login(() => {
+    login((success) => {
         const headers = Object.assign({}, commonHeaders);
         if (loginCookie) {
             headers["Cookie"] = loginCookie;
         }
         
-        http_get(url, headers, (status, html) => {
-            // Extract title
-            const titleMatch = /<div class="movie-detail-content"[^>]*>[\s\S]*?<h3[^>]*>([^<]+)<\/h3>/.exec(html);
-            const title = titleMatch ? titleMatch[1].trim() : "";
-            
-            // Alternative title extraction
-            const altTitleMatch = /<h3[^>]*>([^<]+)<\/h3>/.exec(html);
-            const finalTitle = title || (altTitleMatch ? altTitleMatch[1].trim() : "");
-            
-            // Extract poster
-            const imgMatch = /<div class="movie-detail-banner"[^>]*>[\s\S]*?<img[^>]+src="([^"]+)"/.exec(html);
-            const poster = imgMatch ? imgMatch[1] : "";
+        try {
+            http_get(url, headers, (status, html) => {
+                try {
+                    if (!html || typeof html !== 'string') {
+                        // Return a valid empty response
+                        callback(JSON.stringify({
+                            url: url,
+                            data: JSON.stringify({ type: "movie", dataUrl: "", browseUrl: "" }),
+                            title: "Error loading content",
+                            description: "Could not load content from server",
+                            year: 0,
+                            subtitle: "",
+                            image: "",
+                            actors: [],
+                            recommendations: []
+                        }));
+                        return;
+                    }
+                    
+                    // Extract title
+                    const titleMatch = /<div class="movie-detail-content"[^>]*>[\s\S]*?<h3[^>]*>([^<]+)<\/h3>/.exec(html);
+                    const title = titleMatch ? titleMatch[1].trim() : "";
+                    
+                    // Alternative title extraction
+                    const altTitleMatch = /<h3[^>]*>([^<]+)<\/h3>/.exec(html);
+                    const finalTitle = title || (altTitleMatch ? altTitleMatch[1].trim() : "Unknown");
+                    
+                    // Extract poster
+                    const imgMatch = /<div class="movie-detail-banner"[^>]*>[\s\S]*?<img[^>]+src="([^"]+)"/.exec(html);
+                    const poster = imgMatch ? imgMatch[1] : "";
             
             // Extract plot/storyline
             const plotMatch = /<div class="storyline"[^>]*>([^<]+)<\/div>/.exec(html);
@@ -223,7 +280,34 @@ function load(url, callback) {
                 actors: actors,
                 recommendations: recommendations
             }));
-        });
+                } catch (e) {
+                    // Return a valid error response
+                    callback(JSON.stringify({
+                        url: url,
+                        data: JSON.stringify({ type: "movie", dataUrl: "", browseUrl: "" }),
+                        title: "Error",
+                        description: "Error parsing content",
+                        year: 0,
+                        subtitle: "",
+                        image: "",
+                        actors: [],
+                        recommendations: []
+                    }));
+                }
+            });
+        } catch (e) {
+            callback(JSON.stringify({
+                url: url,
+                data: JSON.stringify({ type: "movie", dataUrl: "", browseUrl: "" }),
+                title: "Error",
+                description: "Could not connect to server",
+                year: 0,
+                subtitle: "",
+                image: "",
+                actors: [],
+                recommendations: []
+            }));
+        }
     });
 }
 
@@ -296,14 +380,21 @@ function extractQualityRecommendations(html, title, poster) {
 }
 
 function loadStreams(url, callback) {
-    login(() => {
+    login((success) => {
         const headers = Object.assign({}, commonHeaders);
         if (loginCookie) {
             headers["Cookie"] = loginCookie;
         }
         
+        try {
         http_get(url, headers, (status, html) => {
+            try {
             const streams = [];
+            
+            if (!html || typeof html !== 'string') {
+                callback(JSON.stringify([]));
+                return;
+            }
             
             // Extract direct video URL
             const dataUrlMatch = /<a[^>]+href="(http[^"]+\.(?:mkv|mp4|avi)[^"]*)"/.exec(html);
@@ -371,7 +462,13 @@ function loadStreams(url, callback) {
             } else {
                 callback(JSON.stringify(streams));
             }
+            } catch (e) {
+                callback(JSON.stringify([]));
+            }
         });
+        } catch (e) {
+            callback(JSON.stringify([]));
+        }
     });
 }
 
