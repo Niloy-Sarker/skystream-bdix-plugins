@@ -20,7 +20,7 @@ function getManifest() {
         language: "bn",
         tvTypes: ["TvSeries", "AsianDrama", "Anime", "Documentary", "Cartoon"],
         baseUrl: MAIN_URL,
-        iconUrl: "https://dflix.discoveryftp.net/assets/images/icon.png"
+        iconUrl: ""
     };
 }
 

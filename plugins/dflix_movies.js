@@ -18,7 +18,7 @@ function getManifest() {
         language: "bn",
         tvTypes: ["Movie", "AnimeMovie"],
         baseUrl: MAIN_URL,
-        iconUrl: "https://dflix.discoveryftp.net/assets/images/icon.png"
+        iconUrl: ""
     };
 }
 

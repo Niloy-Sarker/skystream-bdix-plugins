@@ -14,7 +14,7 @@ function getManifest() {
         language: "bn",
         tvTypes: ["Movie", "TvSeries", "Anime", "AnimeMovie", "Cartoon", "AsianDrama", "Documentary", "OVA", "Others"],
         baseUrl: MAIN_URL,
-        iconUrl: "http://new.circleftp.net/static/media/logo.fce2c9029060a10687b8.png"
+        iconUrl: ""
     };
 }
 
