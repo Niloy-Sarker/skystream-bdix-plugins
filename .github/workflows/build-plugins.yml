@@ -84,7 +84,7 @@ jobs:
           });
           
           fs.writeFileSync('plugins.json', JSON.stringify(plugins, null, 2));
-          console.log('Updated plugins.json URLs to point to .sky files');
+          console.log('Updated plugins.json URLs to point to .sky files in release branch');
           "
           
           cat plugins.json
@@ -94,28 +94,34 @@ jobs:
           git config user.name "GitHub Actions Bot"
           git config user.email "actions@github.com"
           
-          # Try to checkout release branch, create if doesn't exist
-          git checkout release 2>/dev/null || git checkout -b release
+          # Fetch release branch
+          git fetch origin release:release 2>/dev/null || true
+          
+          # Checkout release branch, create if doesn't exist
+          git checkout release 2>/dev/null || git checkout --orphan release
       
       - name: Deploy to release branch
         run: |
-          # Remove old plugin files
-          rm -rf plugins/*.sky plugins/plugins.json
+          # Clear existing content (for orphan branch scenario)
+          git rm -rf . 2>/dev/null || true
+          
+          # Create plugins directory
+          mkdir -p plugins
           
           # Copy built files
-          cp -r build/plugins/*.sky plugins/ 2>/dev/null || true
+          cp build/plugins/*.sky plugins/ 2>/dev/null || true
           cp build/plugins/plugins.json plugins/
           cp build/bdix_repo.json .
           
           # Add and commit
-          git add plugins/*.sky plugins/plugins.json bdix_repo.json
+          git add -A
           
           # Check if there are changes to commit
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
             git commit -m "🚀 Auto-build: Update .sky files and metadata [skip ci]"
-            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git release
+            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git release --force
             echo "✓ Pushed to release branch"
           fi
       
