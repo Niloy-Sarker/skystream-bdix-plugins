@@ -24,135 +24,80 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-      
-      - name: Build .sky files
+      - name: Build .sky files and prepare release
         run: |
-          mkdir -p build/plugins
+          mkdir -p release/plugins
           
-          # Process each .js file in plugins directory (excluding plugins.json)
+          # Build .sky files from each .js plugin
           for jsfile in plugins/*.js; do
             if [ -f "$jsfile" ]; then
-              # Get the base name without extension
-              basename=$(basename "$jsfile" .js)
+              name=$(basename "$jsfile" .js)
+              echo "Building $name.sky..."
               
-              echo "Building $basename.sky..."
-              
-              # Create temp directory
               temp_dir=$(mktemp -d)
-              
-              # Copy and rename to plugin.js
               cp "$jsfile" "$temp_dir/plugin.js"
-              
-              # Create .sky file (zip with plugin.js at root)
-              cd "$temp_dir"
-              zip -q "../$basename.sky" plugin.js
-              cd -
-              
-              # Move to build directory
-              mv "$temp_dir/../$basename.sky" "build/plugins/$basename.sky"
-              
-              # Cleanup
+              (cd "$temp_dir" && zip -q "$name.sky" plugin.js)
+              mv "$temp_dir/$name.sky" "release/plugins/"
               rm -rf "$temp_dir"
               
-              echo "✓ Created $basename.sky"
+              echo "✓ Created $name.sky"
             fi
           done
           
-          # Copy metadata files
-          cp plugins/plugins.json build/plugins/
-          cp bdix_repo.json build/
+          # Copy and update plugins.json using jq
+          jq '.[].url = "https://raw.githubusercontent.com/${{ github.repository }}/refs/heads/release/plugins/" + .[].internalName + ".sky"' \
+            plugins/plugins.json > release/plugins/plugins.json
           
-          echo "Build complete!"
-          ls -lh build/plugins/
-      
-      - name: Update plugins.json URLs and generate repo metadata
-        run: |
-          cd build/plugins
-          
-          # Update URLs in plugins.json to point to .sky files in release branch
-          node -e "
-          const fs = require('fs');
-          const plugins = JSON.parse(fs.readFileSync('plugins.json', 'utf8'));
-          
-          plugins.forEach(plugin => {
-            const internalName = plugin.internalName;
-            plugin.url = `https://raw.githubusercontent.com/niloy-sarker/skystream-bdix-plugins/refs/heads/release/plugins/${internalName}.sky`;
-          });
-          
-          fs.writeFileSync('plugins.json', JSON.stringify(plugins, null, 2));
-          console.log('Updated plugins.json URLs to point to .sky files in release branch');
-          
-          // Generate plugins/repo.json that points to the plugins.json in the release branch
-          const repo = {
-            name: 'SkyStream Plugins',
-            id: 'sky.plugins',
-            description: 'Repository of SkyStream plugin manifests',
-            manifestVersion: 1,
-            plugins: [
-              'https://raw.githubusercontent.com/niloy-sarker/skystream-bdix-plugins/refs/heads/release/plugins/plugins.json'
+          # Generate repo.json
+          cat > release/plugins/repo.json << 'EOF'
+          {
+            "name": "SkyStream Plugins",
+            "id": "sky.plugins",
+            "description": "Repository of SkyStream plugin manifests",
+            "manifestVersion": 1,
+            "plugins": [
+              "https://raw.githubusercontent.com/${{ github.repository }}/refs/heads/release/plugins/plugins.json"
             ]
-          };
-          fs.writeFileSync('repo.json', JSON.stringify(repo, null, 2));
-          console.log('Created plugins/repo.json pointing to release plugins.json');
-          "
+          }
+          EOF
+          # Fix repo.json with actual repo name
+          sed -i 's|\${{ github.repository }}|${{ github.repository }}|g' release/plugins/repo.json
           
-          # Move back to build root and update bdix_repo.json to reference release branch
-          cd ..
-          node -e "
-          const fs = require('fs');
-          const path = 'bdix_repo.json';
-          const bdix = JSON.parse(fs.readFileSync(path, 'utf8'));
-          bdix.repos = bdix.repos.map(r => r.replace('/refs/heads/main/', '/refs/heads/release/'));
-          fs.writeFileSync(path, JSON.stringify(bdix, null, 2));
-          console.log('Updated bdix_repo.json to reference release branch');
-          "
+          # Copy and update bdix_repo.json
+          sed 's|/refs/heads/main/|/refs/heads/release/|g' bdix_repo.json > release/bdix_repo.json
           
-          cat plugins.json
-          echo '---'
-          echo 'Generated plugins/repo.json:'
-          cat plugins/repo.json
+          echo "=== Build Complete ==="
+          ls -lh release/plugins/
       
-      - name: Checkout release branch
+      - name: Deploy to release branch
         run: |
           git config user.name "GitHub Actions Bot"
           git config user.email "actions@github.com"
           
-          # Fetch release branch
+          # Save release files
+          cp -r release /tmp/release_files
+          
+          # Switch to release branch
           git fetch origin release:release 2>/dev/null || true
-          
-          # Checkout release branch, create if doesn't exist
           git checkout release 2>/dev/null || git checkout --orphan release
-      
-      - name: Deploy to release branch
-        run: |
-          # Clear existing content (for orphan branch scenario)
+          
+          # Clean and copy release files
           git rm -rf . 2>/dev/null || true
+          rm -rf ./* 2>/dev/null || true
           
-          # Create plugins directory
           mkdir -p plugins
+          cp /tmp/release_files/plugins/*.sky plugins/
+          cp /tmp/release_files/plugins/plugins.json plugins/
+          cp /tmp/release_files/plugins/repo.json plugins/
+          cp /tmp/release_files/bdix_repo.json .
           
-          # Copy built files
-          cp build/plugins/*.sky plugins/ 2>/dev/null || true
-          cp build/plugins/plugins.json plugins/
-          cp build/plugins/repo.json plugins/ 2>/dev/null || true
-          cp build/bdix_repo.json .
-          
-          # Remove temporary build directory before adding files to avoid committing it
-          rm -rf build || true
-          
-          # Add and commit
+          # Commit and push
           git add -A
-          
-          # Check if there are changes to commit
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "🚀 Auto-build: Update .sky files and metadata [skip ci]"
-            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git release --force
+            git commit -m "🚀 Auto-build: Update plugins [skip ci]"
+            git push origin release --force
             echo "✓ Pushed to release branch"
           fi
       
@@ -160,14 +105,13 @@ jobs:
         run: |
           echo "### Build Summary 📦" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Built the following plugins:" >> $GITHUB_STEP_SUMMARY
+          echo "**Release branch structure:**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "├── bdix_repo.json" >> $GITHUB_STEP_SUMMARY
+          echo "└── plugins/" >> $GITHUB_STEP_SUMMARY
+          echo "    ├── *.sky (plugin files)" >> $GITHUB_STEP_SUMMARY
+          echo "    ├── plugins.json" >> $GITHUB_STEP_SUMMARY
+          echo "    └── repo.json" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          for skyfile in build/plugins/*.sky; do
-            if [ -f "$skyfile" ]; then
-              basename=$(basename "$skyfile")
-              size=$(du -h "$skyfile" | cut -f1)
-              echo "- ✅ \`$basename\` ($size)" >> $GITHUB_STEP_SUMMARY
-            fi
-          done
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Repository URL:** \`https://raw.githubusercontent.com/niloy-sarker/skystream-bdix-plugins/refs/heads/release/bdix_repo.json\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Repository URL:** \`https://raw.githubusercontent.com/${{ github.repository }}/refs/heads/release/bdix_repo.json\`" >> $GITHUB_STEP_SUMMARY
