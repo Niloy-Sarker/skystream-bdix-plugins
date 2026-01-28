@@ -1,9 +1,0 @@
-{
-    "name": "SkyStream Universe Repository",
-    "id": "sky.universe",
-    "description": "SkyStream Universe plugins repository",
-    "manifestVersion": 1,
-    "repos": [
-        "https://raw.githubusercontent.com/niloy-sarker/skystream-bdix-plugins/refs/heads/main/plugins/repo.json"
-    ]
-}
