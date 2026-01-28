@@ -69,7 +69,7 @@ jobs:
           echo "Build complete!"
           ls -lh build/plugins/
       
-      - name: Update plugins.json URLs
+      - name: Update plugins.json URLs and generate repo metadata
         run: |
           cd build/plugins
           
@@ -80,14 +80,41 @@ jobs:
           
           plugins.forEach(plugin => {
             const internalName = plugin.internalName;
-            plugin.url = \`https://raw.githubusercontent.com/niloy-sarker/skystream-bdix-plugins/refs/heads/release/plugins/\${internalName}.sky\`;
+            plugin.url = `https://raw.githubusercontent.com/niloy-sarker/skystream-bdix-plugins/refs/heads/release/plugins/${internalName}.sky`;
           });
           
           fs.writeFileSync('plugins.json', JSON.stringify(plugins, null, 2));
           console.log('Updated plugins.json URLs to point to .sky files in release branch');
+          
+          // Generate plugins/repo.json that points to the plugins.json in the release branch
+          const repo = {
+            name: 'SkyStream Plugins',
+            id: 'sky.plugins',
+            description: 'Repository of SkyStream plugin manifests',
+            manifestVersion: 1,
+            plugins: [
+              'https://raw.githubusercontent.com/niloy-sarker/skystream-bdix-plugins/refs/heads/release/plugins/plugins.json'
+            ]
+          };
+          fs.writeFileSync('repo.json', JSON.stringify(repo, null, 2));
+          console.log('Created plugins/repo.json pointing to release plugins.json');
+          "
+          
+          # Move back to build root and update bdix_repo.json to reference release branch
+          cd ..
+          node -e "
+          const fs = require('fs');
+          const path = 'bdix_repo.json';
+          const bdix = JSON.parse(fs.readFileSync(path, 'utf8'));
+          bdix.repos = bdix.repos.map(r => r.replace('/refs/heads/main/', '/refs/heads/release/'));
+          fs.writeFileSync(path, JSON.stringify(bdix, null, 2));
+          console.log('Updated bdix_repo.json to reference release branch');
           "
           
           cat plugins.json
+          echo '---'
+          echo 'Generated plugins/repo.json:'
+          cat plugins/repo.json
       
       - name: Checkout release branch
         run: |
@@ -111,7 +138,11 @@ jobs:
           # Copy built files
           cp build/plugins/*.sky plugins/ 2>/dev/null || true
           cp build/plugins/plugins.json plugins/
+          cp build/plugins/repo.json plugins/ 2>/dev/null || true
           cp build/bdix_repo.json .
+          
+          # Remove temporary build directory before adding files to avoid committing it
+          rm -rf build || true
           
           # Add and commit
           git add -A
