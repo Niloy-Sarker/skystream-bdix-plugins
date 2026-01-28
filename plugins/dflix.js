@@ -1,7 +1,7 @@
 // Dflix Combined Provider for Skystream (Movies + Series)
 // Ported from Kotlin CloudStream provider
 
-const mainUrl = "https://dflix.discoveryftp.net";
+const MAIN_URL = "https://dflix.discoveryftp.net";
 let loginCookie = null;
 
 const commonHeaders = {
@@ -31,7 +31,7 @@ function login(callback) {
         return;
     }
     
-    http_get(mainUrl + "/login/demo", commonHeaders, (status, data, cookies) => {
+    http_get(MAIN_URL + "/login/demo", commonHeaders, (status, data, cookies) => {
         if (cookies) {
             loginCookie = cookies;
         }
@@ -43,19 +43,19 @@ function getHome(callback) {
     login(() => {
         const categories = [
             // Movies
-            { title: "Bangla Movies", url: mainUrl + "/m/category/Bangla/1", type: "movie" },
-            { title: "English Movies", url: mainUrl + "/m/category/English/1", type: "movie" },
-            { title: "Hindi Movies", url: mainUrl + "/m/category/Hindi/1", type: "movie" },
-            { title: "Tamil Movies", url: mainUrl + "/m/category/Tamil/1", type: "movie" },
-            { title: "Animation Movies", url: mainUrl + "/m/category/Animation/1", type: "movie" },
-            { title: "Other Movies", url: mainUrl + "/m/category/Others/1", type: "movie" },
+            { title: "Bangla Movies", url: MAIN_URL + "/m/category/Bangla/1", type: "movie" },
+            { title: "English Movies", url: MAIN_URL + "/m/category/English/1", type: "movie" },
+            { title: "Hindi Movies", url: MAIN_URL + "/m/category/Hindi/1", type: "movie" },
+            { title: "Tamil Movies", url: MAIN_URL + "/m/category/Tamil/1", type: "movie" },
+            { title: "Animation Movies", url: MAIN_URL + "/m/category/Animation/1", type: "movie" },
+            { title: "Other Movies", url: MAIN_URL + "/m/category/Others/1", type: "movie" },
             // Series
-            { title: "English Series", url: mainUrl + "/s/category/Foreign/1", type: "series" },
-            { title: "Bangla Series", url: mainUrl + "/s/category/Bangla/1", type: "series" },
-            { title: "Hindi Series", url: mainUrl + "/s/category/Hindi/1", type: "series" },
-            { title: "South Series", url: mainUrl + "/s/category/South/1", type: "series" },
-            { title: "Animation Series", url: mainUrl + "/s/category/Animation/1", type: "series" },
-            { title: "Dubbed Series", url: mainUrl + "/s/category/Dubbed/1", type: "series" }
+            { title: "English Series", url: MAIN_URL + "/s/category/Foreign/1", type: "series" },
+            { title: "Bangla Series", url: MAIN_URL + "/s/category/Bangla/1", type: "series" },
+            { title: "Hindi Series", url: MAIN_URL + "/s/category/Hindi/1", type: "series" },
+            { title: "South Series", url: MAIN_URL + "/s/category/South/1", type: "series" },
+            { title: "Animation Series", url: MAIN_URL + "/s/category/Animation/1", type: "series" },
+            { title: "Dubbed Series", url: MAIN_URL + "/s/category/Dubbed/1", type: "series" }
         ];
         
         let finalResult = [];
@@ -80,7 +80,7 @@ function getHome(callback) {
                         
                         const urlMatch = /<a\s+href="([^"]+)"/.exec(cardHtml);
                         if (!urlMatch) continue;
-                        const url = mainUrl + urlMatch[1];
+                        const url = MAIN_URL + urlMatch[1];
                         
                         const titleMatch = /<h3[^>]*>([^<]+)<\/h3>/.exec(cardHtml);
                         const title = titleMatch ? titleMatch[1].trim() : "";
@@ -108,7 +108,7 @@ function getHome(callback) {
                         
                         const urlMatch = /<a\s+href="([^"]+)"/.exec(cardHtml);
                         if (!urlMatch) continue;
-                        const url = mainUrl + urlMatch[1];
+                        const url = MAIN_URL + urlMatch[1];
                         
                         const titleMatch = /<div class="fcard"[^>]*>[\s\S]*?<div[^>]*>([^<]+)<\/div>/.exec(cardHtml);
                         const title = titleMatch ? titleMatch[1].trim() : "";
@@ -147,8 +147,8 @@ function search(query, callback) {
         }
         
         // Search both movies and series
-        const movieSearchUrl = mainUrl + "/m/find/" + encodeURIComponent(query);
-        const seriesSearchUrl = mainUrl + "/search";
+        const movieSearchUrl = MAIN_URL + "/m/find/" + encodeURIComponent(query);
+        const seriesSearchUrl = MAIN_URL + "/search";
         
         let allResults = [];
         let pending = 2;
@@ -168,7 +168,7 @@ function search(query, callback) {
                 
                 const urlMatch = /<a\s+href="([^"]+)"/.exec(itemHtml);
                 if (!urlMatch) continue;
-                const url = mainUrl + urlMatch[1];
+                const url = MAIN_URL + urlMatch[1];
                 
                 const titleMatch = /<div class="searchtitle">([^<]+)<\/div>/.exec(itemHtml);
                 const title = titleMatch ? titleMatch[1].trim() : "";
@@ -195,7 +195,7 @@ function search(query, callback) {
                     
                     const urlMatch = /<a\s+href="([^"]+)"/.exec(cardHtml);
                     if (!urlMatch) continue;
-                    const url = mainUrl + urlMatch[1];
+                    const url = MAIN_URL + urlMatch[1];
                     
                     const titleMatch = /<h3[^>]*>([^<]+)<\/h3>/.exec(cardHtml);
                     const title = titleMatch ? titleMatch[1].trim() : "";
@@ -240,7 +240,7 @@ function search(query, callback) {
             let match;
             
             while ((match = searchItemRegex.exec(html)) !== null) {
-                const url = mainUrl + match[1];
+                const url = MAIN_URL + match[1];
                 const itemHtml = match[2];
                 
                 const titleMatch = /<div class="searchtitle">([^<]+)<\/div>/.exec(itemHtml);
