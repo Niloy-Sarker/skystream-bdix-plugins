@@ -4,97 +4,25 @@
     "name": "CircleFTP",
     "internalName": "circleftp",
     "version": 1,
-    "authors": [
-      "Niloy"
-    ],
+    "authors": ["Niloy"],
     "description": "CircleFTP Provider (BDIX)",
     "language": "bn",
-    "tvTypes": [
-      "Movie",
-      "TvSeries",
-      "Anime",
-      "AnimeMovie",
-      "Cartoon",
-      "AsianDrama",
-      "Documentary",
-      "OVA",
-      "Others"
-    ],
+    "tvTypes": ["Movie", "TvSeries", "Anime", "AnimeMovie", "Cartoon", "AsianDrama", "Documentary", "OVA", "Others"],
     "baseUrl": "MAIN_URL",
     "iconUrl": "http://new.circleftp.net/static/media/logo.fce2c9029060a10687b8.png",
-    "url": "https://raw.githubusercontent.com/Niloy-Sarker/skystream-bdix-plugins/refs/heads/release/plugins/circleftp.sky"
+    "url": "https://raw.githubusercontent.com/niloy-sarker/skystream-bdix-plugins/refs/heads/release/plugins/circleftp.sky"
   },
   {
     "id": "com.niloy.dflix",
     "name": "Dflix",
     "internalName": "dflix",
     "version": 1,
-    "authors": [
-      "Niloy"
-    ],
+    "authors": ["Niloy"],
     "description": "Dflix Provider (BDIX) - Movies & Series in Bangla, English, Hindi, Tamil & More",
     "language": "bn",
-    "tvTypes": [
-      "Movie",
-      "TvSeries",
-      "Anime",
-      "AnimeMovie",
-      "AsianDrama",
-      "Documentary",
-      "Cartoon"
-    ],
+    "tvTypes": ["Movie", "TvSeries", "Anime", "AnimeMovie", "AsianDrama", "Documentary", "Cartoon"],
     "baseUrl": "https://dflix.discoveryftp.net",
     "iconUrl": "https://dflix.discoveryftp.net/favicon.ico",
-    "url": "https://raw.githubusercontent.com/Niloy-Sarker/skystream-bdix-plugins/refs/heads/release/plugins/circleftp.sky"
-  }
-]
-[
-  {
-    "id": "com.niloy.circleftp",
-    "name": "CircleFTP",
-    "internalName": "circleftp",
-    "version": 1,
-    "authors": [
-      "Niloy"
-    ],
-    "description": "CircleFTP Provider (BDIX)",
-    "language": "bn",
-    "tvTypes": [
-      "Movie",
-      "TvSeries",
-      "Anime",
-      "AnimeMovie",
-      "Cartoon",
-      "AsianDrama",
-      "Documentary",
-      "OVA",
-      "Others"
-    ],
-    "baseUrl": "MAIN_URL",
-    "iconUrl": "http://new.circleftp.net/static/media/logo.fce2c9029060a10687b8.png",
-    "url": "https://raw.githubusercontent.com/Niloy-Sarker/skystream-bdix-plugins/refs/heads/release/plugins/dflix.sky"
-  },
-  {
-    "id": "com.niloy.dflix",
-    "name": "Dflix",
-    "internalName": "dflix",
-    "version": 1,
-    "authors": [
-      "Niloy"
-    ],
-    "description": "Dflix Provider (BDIX) - Movies & Series in Bangla, English, Hindi, Tamil & More",
-    "language": "bn",
-    "tvTypes": [
-      "Movie",
-      "TvSeries",
-      "Anime",
-      "AnimeMovie",
-      "AsianDrama",
-      "Documentary",
-      "Cartoon"
-    ],
-    "baseUrl": "https://dflix.discoveryftp.net",
-    "iconUrl": "https://dflix.discoveryftp.net/favicon.ico",
-    "url": "https://raw.githubusercontent.com/Niloy-Sarker/skystream-bdix-plugins/refs/heads/release/plugins/dflix.sky"
+    "url": "https://raw.githubusercontent.com/niloy-sarker/skystream-bdix-plugins/refs/heads/release/plugins/dflix.sky"
   }
 ]
