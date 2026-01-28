@@ -12,14 +12,18 @@ const commonHeaders = {
 
 function getManifest() {
     return {
-        name: "(BDIX) Dflix",
         id: "com.niloy.dflix",
+        name: "Dflix",
+        internalName: "Dflix",
         version: 1,
-        baseUrl: mainUrl,
-        type: "Movie", // Primary type
-        language: "bn"
+        description: "Dflix Provider - Movies, TV Series, Anime",
+        language: "bn",
+        tvTypes: ["Movie", "TvSeries", "Anime", "AnimeMovie", "Cartoon", "AsianDrama", "Documentary", "OVA", "Others"],
+        baseUrl: MAIN_URL,
+        iconUrl: "https://dflix.discoveryftp.net/assets/images/icon.png"
     };
 }
+
 
 function login(callback) {
     if (loginCookie) {
