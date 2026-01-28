@@ -14,7 +14,7 @@ function getManifest() {
     return {
         id: "com.niloy.dflix.series",
         name: "Dflix Series",
-        internalName: "dflix_series",
+        internalName: "dflixseries",
         version: 1,
         description: "Dflix Series Provider - TV Series, Asian Drama, Anime, Documentary, Cartoon",
         language: "bn",
@@ -521,3 +521,12 @@ function loadStreams(url, callback) {
         });
     });
 }
+
+// Export public functions for plugin loader
+globalThis.getManifest = getManifest;
+globalThis.getHome = getHome;
+globalThis.search = search;
+globalThis.load = load;
+globalThis.loadStreams = loadStreams;
+globalThis.loadLinks = loadStreams;
+globalThis.loadUrl = loadStreams;

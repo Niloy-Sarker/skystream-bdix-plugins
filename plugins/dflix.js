@@ -496,3 +496,15 @@ function getQualityLabel(fileName) {
     if (lower.includes("ds4k")) return "1080p DS4K";
     return "HD";
 }
+
+// Export public functions for plugin loader
+globalThis.getManifest = getManifest;
+globalThis.getHome = getHome;
+globalThis.search = search;
+globalThis.load = load;
+globalThis.loadStreams = loadStreams;
+globalThis.loadLinks = loadStreams;
+globalThis.loadUrl = loadStreams;
+// Helper exports (optional)
+globalThis.getQualityLabel = getQualityLabel;
+globalThis.getQualityFromFileName = getQualityFromFileName;

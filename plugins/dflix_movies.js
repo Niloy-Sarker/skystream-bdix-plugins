@@ -1,5 +1,3 @@
-// Dflix Movies Provider for Skystream
-// Ported from Kotlin CloudStream provider (DflixMoviesProvider.kt)
 
 const MAIN_URL = "https://dflix.discoveryftp.net";
 let loginCookie = null;
@@ -14,7 +12,7 @@ function getManifest() {
     return {
         id: "com.niloy.dflix.movies",
         name: "Dflix Movies",
-        internalName: "dflix_movies",
+        internalName: "dflixmovies",
         version: 1,
         description: "Dflix Movies Provider - Bangla, English, Hindi, Tamil, Animation Movies",
         language: "bn",
@@ -408,3 +406,12 @@ function getQualityLabel(fileName) {
     
     return "HD";
 }
+
+// Export public functions for plugin loader
+globalThis.getManifest = getManifest;
+globalThis.getHome = getHome;
+globalThis.search = search;
+globalThis.load = load;
+globalThis.loadStreams = loadStreams;
+globalThis.loadLinks = loadStreams;
+globalThis.loadUrl = loadStreams;
