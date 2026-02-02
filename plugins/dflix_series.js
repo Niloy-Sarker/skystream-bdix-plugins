@@ -156,12 +156,12 @@ function parseSeriesCards(html) {
         if (!urlMatch) continue;
         var url = MAIN_URL + urlMatch[1];
         
-        // Extract title from <div class='ftitle'>
-        var titleMatch = /<div class=['"]ftitle['"][^>]*>([^<]+)<\/div>/.exec(cardHtml);
-        var title = titleMatch ? titleMatch[1].trim() : "";
+        // Extract title from <div class='ftitle'> - handle extra whitespace
+        var titleMatch = /<div class=['"]ftitle['"][^>]*>([\s\S]*?)<\/div>/.exec(cardHtml);
+        var title = titleMatch ? titleMatch[1].replace(/\s+/g, ' ').trim() : "";
         
-        // Extract poster from img src - images are already full URLs
-        var posterMatch = /<img[^>]+src=['"]([^'"]+)['"]/.exec(cardHtml);
+        // Extract poster from img src - get first src= before onerror
+        var posterMatch = /<img[^>]*\ssrc=['"]([^'"]+)['"]/.exec(cardHtml);
         var poster = "";
         if (posterMatch) {
             poster = posterMatch[1];
@@ -328,11 +328,8 @@ async function load(url) {
             episodes = await fetchAllEpisodes(seasons, headers);
         }
         
-        // Build description
+        // Use plot as description (don't append genres)
         var description = plot;
-        if (genres.length > 0) {
-            description += "<br><br><b>Genres:</b> " + genres.join(", ");
-        }
         
         return {
             title: finalTitle,
