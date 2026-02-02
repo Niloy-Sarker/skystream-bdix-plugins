@@ -139,40 +139,36 @@ async function getHome() {
 }
 
 function parseSeriesCards(html) {
-    const items = [];
+    var items = [];
     
-    // Pattern to match series cards: div.col-xl-4
-    const cardRegex = /<div class="col-xl-4"[^>]*>([\s\S]*?)<div class="col-xl-4"|<div class="col-xl-4"[^>]*>([\s\S]*?)$/g;
+    // Pattern: <div class='col-xl-4 col-md-4 col-sm-6 mt-3 pe-3'>
+    // Inside: <a class='text-light' href='/s/view/ID'>
+    // Then: <div class='fcard'> with img and <div class='ftitle'>
     
-    // Alternative simpler pattern
-    const simpleCardRegex = /<div class="fcard"[^>]*>([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/g;
-    let match;
+    var cardRegex = /<div class=['"]col-xl-4[^>]*>([\s\S]*?)<\/div>\s*<\/div>(?:\s*<\/a>)?(?:\s*<\/div>)?/g;
+    var match;
     
-    while ((match = simpleCardRegex.exec(html)) !== null) {
-        const cardHtml = match[1];
+    while ((match = cardRegex.exec(html)) !== null) {
+        var cardHtml = match[1];
         
-        // Extract URL from parent anchor
-        const fullCardMatch = new RegExp('<a\\s+href="([^"]+)"[^>]*>[\\s\\S]*?' + escapeRegex(cardHtml.substring(0, 50))).exec(html);
-        
-        // Try to find URL differently
-        const urlSearch = html.substring(Math.max(0, match.index - 200), match.index + match[0].length);
-        const urlMatch = /<a\s+href="([^"]+)"/.exec(urlSearch);
+        // Extract URL - look for /s/view/ID pattern
+        var urlMatch = /<a[^>]+href=['"](\/s\/view\/\d+)['"]/.exec(cardHtml);
         if (!urlMatch) continue;
-        const url = MAIN_URL + urlMatch[1];
+        var url = MAIN_URL + urlMatch[1];
         
-        // Extract title
-        const titleMatch = /<div[^>]*>([^<]+)<\/div>/.exec(cardHtml);
-        const title = titleMatch ? titleMatch[1].trim() : "";
+        // Extract title from <div class='ftitle'>
+        var titleMatch = /<div class=['"]ftitle['"][^>]*>([^<]+)<\/div>/.exec(cardHtml);
+        var title = titleMatch ? titleMatch[1].trim() : "";
         
-        // Extract poster
-        const posterMatch = /<img[^>]+src="([^"]+)"/.exec(urlSearch);
-        const poster = posterMatch ? posterMatch[1] : "";
+        // Extract poster from img src
+        var posterMatch = /<img[^>]+src=['"]([^'"]+)['"]/.exec(cardHtml);
+        var poster = posterMatch ? posterMatch[1] : "";
         
-        // Extract genres to determine type
-        const genreMatch = /<div class="ganre-wrapper[^"]*">([\s\S]*?)<\/div>/.exec(urlSearch);
-        let type = "TvSeries";
+        // Extract genres from fdetails to determine type
+        var genreMatch = /<div class=['"]fdetails['"][^>]*>([^<]+)</.exec(cardHtml);
+        var type = "TvSeries";
         if (genreMatch) {
-            const genreText = genreMatch[1].toLowerCase();
+            var genreText = genreMatch[1].toLowerCase();
             if (genreText.includes("animation") || genreText.includes("anime")) {
                 type = "Anime";
             }
@@ -186,35 +182,6 @@ function parseSeriesCards(html) {
                 description: "",
                 type: type
             });
-        }
-    }
-    
-    // Fallback: Try another pattern if no results
-    if (items.length === 0) {
-        const altRegex = /<div class="col-xl-4">([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/g;
-        
-        while ((match = altRegex.exec(html)) !== null) {
-            const cardHtml = match[1];
-            
-            const urlMatch = /<a\s+href="([^"]+)"/.exec(cardHtml);
-            if (!urlMatch) continue;
-            const url = MAIN_URL + urlMatch[1];
-            
-            // Title is usually in a specific div structure
-            const titleMatch = /<div class="fcard[^"]*"[^>]*>[\s\S]*?<div[^>]*>[\s\S]*?<div[^>]*>([^<]+)<\/div>/.exec(cardHtml);
-            const title = titleMatch ? titleMatch[1].trim() : "";
-            
-            const posterMatch = /<img[^>]+src="([^"]+)"/.exec(cardHtml);
-            const poster = posterMatch ? posterMatch[1] : "";
-            
-            if (title || url) {
-                items.push({
-                    name: title || "Unknown",
-                    link: url,
-                    image: poster,
-                    description: ""
-                });
-            }
         }
     }
     
@@ -247,29 +214,35 @@ async function search(query) {
         var series = [];
         
         if (html && typeof html === 'string') {
-            // Parse search results
-            var searchItemRegex = /<div class="moviesearchiteam"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/g;
+            // Parse search results - <div class='moviesearchiteam ps-1 mb-1'>
+            // Inside: <a href="/s/view/ID"> with <div class="searchtitle">
+            var searchItemRegex = /<div class=['"]moviesearchiteam[^'"]*['"][^>]*>([\s\S]*?)<\/a>/g;
             var match;
             
             while ((match = searchItemRegex.exec(html)) !== null) {
                 var itemHtml = match[1];
                 
-                var urlMatch = /<a\s+href="([^"]+)"/.exec(itemHtml);
+                // Extract URL - look for /s/view/ID
+                var urlMatch = /<a\s+href=['"](\/s\/view\/\d+)['"]/.exec(itemHtml);
                 if (!urlMatch) continue;
                 var url = MAIN_URL + urlMatch[1];
                 
-                var titleMatch = /<div class="searchtitle">([^<]+)<\/div>/.exec(itemHtml);
+                // Extract title from searchtitle class
+                var titleMatch = /<div class=['"]searchtitle['"][^>]*>([^<]+)<\/div>/.exec(itemHtml);
                 var title = titleMatch ? titleMatch[1].trim() : "";
                 
-                var posterMatch = /<img[^>]+src="([^"]+)"/.exec(itemHtml);
+                // Extract poster from img src
+                var posterMatch = /<img[^>]+src=['"]([^'"]+)['"]/.exec(itemHtml);
                 var poster = posterMatch ? posterMatch[1] : "";
                 
-                series.push({
-                    title: title,
-                    url: url,
-                    posterUrl: poster,
-                    isFolder: false
-                });
+                if (title) {
+                    series.push({
+                        title: title,
+                        url: url,
+                        posterUrl: poster,
+                        isFolder: false
+                    });
+                }
             }
         }
         
