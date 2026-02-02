@@ -242,8 +242,8 @@ async function search(query) {
                 var titleMatch = /<div class=['"]searchtitle['"][^>]*>([^<]+)<\/div>/.exec(itemHtml);
                 var title = titleMatch ? titleMatch[1].trim() : "";
                 
-                // Extract poster from img src - handle both with and without space before src
-                var posterMatch = /<img[^>]*src=['"]([^'"]+)['"]/.exec(itemHtml);
+                // Extract poster from img src - require space before src to avoid matching inside onerror
+                var posterMatch = /<img[^>]*\ssrc=['"]([^'"]+)['"]/.exec(itemHtml);
                 var poster = "";
                 if (posterMatch) {
                     poster = posterMatch[1];
@@ -300,8 +300,8 @@ async function load(url) {
         var altTitleMatch = /<h3[^>]*>([^<]+)<\/h3>/.exec(html);
         var finalTitle = title || (altTitleMatch ? altTitleMatch[1].trim() : "Unknown");
         
-        // Extract poster - handle both with and without space before src
-        var imgMatch = /<div class=['"]movie-detail-banner['"][^>]*>[\s\S]*?<img[^>]*src=['"]([^'"]+)['"]/.exec(html);
+        // Extract poster - require space before src to avoid matching inside onerror
+        var imgMatch = /<div class=['"]movie-detail-banner['"][^>]*>[\s\S]*?<img[^>]*\ssrc=['"]([^'"]+)['"]/.exec(html);
         var poster = "";
         if (imgMatch) {
             poster = imgMatch[1];
