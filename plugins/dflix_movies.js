@@ -1,154 +1,191 @@
 
-const MAIN_URL = "https://dflix.discoveryftp.net";
-let loginCookie = null;
+var MAIN_URL = "https://dflix.discoveryftp.net";
+var loginCookie = null;
 
-const commonHeaders = {
+var commonHeaders = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.5"
 };
 
-function getManifest() {
+// Storage keys
+var STORAGE_KEY_COOKIES = "dflix_movies_cookies";
+
+async function getManifest() {
     return {
         id: "com.niloy.dflix.movies",
         name: "Dflix Movies",
         internalName: "dflixmovies",
-        version: 1,
+        version: 2,
         description: "Dflix Movies Provider - Bangla, English, Hindi, Tamil, Animation Movies",
         language: "bn",
         tvTypes: ["Movie", "AnimeMovie"],
         baseUrl: MAIN_URL,
-        iconUrl: ""
+        iconUrl: "",
+        hasSearch: true
     };
 }
 
-function login(callback) {
+async function login() {
+    // Check if cookie is already set
     if (loginCookie) {
-        callback(true);
-        return;
+        return true;
     }
     
-    try {
-        http_get(MAIN_URL + "/login/demo", commonHeaders, (status, data, cookies) => {
-            if (status && status >= 200 && status < 400) {
-                if (cookies) {
-                    loginCookie = cookies;
-                }
-                callback(true);
-            } else {
-                // Login failed but continue anyway
-                callback(false);
+    // Try to restore from storage
+    var saved = await getPreference(STORAGE_KEY_COOKIES);
+    if (saved) {
+        try {
+            var json = JSON.parse(saved);
+            if (Date.now() - json.timestamp < 86400000) { // 24 hours
+                loginCookie = json.cookie;
+                return true;
             }
-        });
+        } catch (e) { }
+    }
+    
+    // Perform login
+    try {
+        var res = await http_get(MAIN_URL + "/login/demo", commonHeaders);
+        
+        if (res && res.statusCode >= 200 && res.statusCode < 400) {
+            // Extract cookies from headers
+            if (res.headers) {
+                var setCookie = res.headers['set-cookie'] || res.headers['Set-Cookie'];
+                if (setCookie) {
+                    // Parse cookie string
+                    loginCookie = setCookie;
+                    
+                    // Save to storage
+                    await setPreference(STORAGE_KEY_COOKIES, JSON.stringify({
+                        cookie: loginCookie,
+                        timestamp: Date.now()
+                    }));
+                    
+                    return true;
+                }
+            }
+        }
+        
+        // Login succeeded but no cookie (proceed anyway)
+        return true;
     } catch (e) {
-        callback(false);
+        // Login failed but continue anyway
+        return false;
     }
 }
 
-function getHome(callback) {
-    login((success) => {
-        const categories = [
-            { title: "Bangla", url: MAIN_URL + "/m/category/Bangla/1" },
-            { title: "English", url: MAIN_URL + "/m/category/English/1" },
-            { title: "Hindi", url: MAIN_URL + "/m/category/Hindi/1" },
-            { title: "Tamil", url: MAIN_URL + "/m/category/Tamil/1" },
-            { title: "Animation", url: MAIN_URL + "/m/category/Animation/1" },
-            { title: "Others", url: MAIN_URL + "/m/category/Others/1" }
-        ];
+async function getHome() {
+    await login();
+    
+    var categories = [
+        { title: "Bangla", url: MAIN_URL + "/m/category/Bangla/1" },
+        { title: "English", url: MAIN_URL + "/m/category/English/1" },
+        { title: "Hindi", url: MAIN_URL + "/m/category/Hindi/1" },
+        { title: "Tamil", url: MAIN_URL + "/m/category/Tamil/1" },
+        { title: "Animation", url: MAIN_URL + "/m/category/Animation/1" },
+        { title: "Others", url: MAIN_URL + "/m/category/Others/1" }
+    ];
+    
+    var sections = {};
+    
+    // Fetch all categories in parallel
+    var promises = categories.map(async function(category) {
+        var headers = Object.assign({}, commonHeaders);
+        if (loginCookie) {
+            headers["Cookie"] = loginCookie;
+        }
         
-        let finalResult = [];
-        let pending = categories.length;
-        
-        categories.forEach((category, index) => {
-            const headers = Object.assign({}, commonHeaders);
-            if (loginCookie) {
-                headers["Cookie"] = loginCookie;
+        try {
+            var html = await _fetch(category.url, headers);
+            var items = [];
+            
+            if (html && typeof html === 'string') {
+                items = parseMovieCards(html);
             }
             
-            try {
-                http_get(category.url, headers, (status, html) => {
-                    let items = [];
-                    try {
-                        if (html && typeof html === 'string') {
-                            items = parseMovieCards(html);
-                        }
-                    } catch (e) {
-                        items = [];
-                    }
-                    
-                    finalResult.push({
-                        title: category.title,
-                        Data: items || []
-                    });
-                    
-                    pending--;
-                    if (pending === 0) {
-                        // Return valid JSON even if empty
-                        callback(JSON.stringify(finalResult.length > 0 ? finalResult : []));
-                    }
-                });
-            } catch (e) {
-                finalResult.push({
-                    title: category.title,
-                    Data: []
-                });
-                pending--;
-                if (pending === 0) {
-                    callback(JSON.stringify(finalResult.length > 0 ? finalResult : []));
-                }
-            }
-        });
+            return {
+                title: category.title,
+                items: items
+            };
+        } catch (e) {
+            return {
+                title: category.title,
+                items: []
+            };
+        }
     });
+    
+    var results = await Promise.all(promises);
+    
+    // Convert to sections map
+    for (var i = 0; i < results.length; i++) {
+        var result = results[i];
+        if (result.items.length > 0) {
+            sections[result.title] = result.items.map(function(item) {
+                return {
+                    title: item.name,
+                    url: item.link,
+                    posterUrl: item.image,
+                    isFolder: false
+                };
+            });
+        }
+    }
+    
+    return sections;
 }
 
 function parseMovieCards(html) {
-    const items = [];
+    var items = [];
     
     // Pattern to match movie cards: div.card > a (with href) > poster + info
-    const cardRegex = /<div class=["']card["']>([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/g;
-    let match;
+    var cardRegex = /<div class=["']card["']>([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/g;
+    var match;
     
     while ((match = cardRegex.exec(html)) !== null) {
-        const cardHtml = match[1];
+        var cardHtml = match[1];
         
         // Skip disabled cards
         if (cardHtml.includes('disable')) continue;
         
         // Extract URL
-        const urlMatch = /<a\s+href=["']([^"']+)["']/.exec(cardHtml);
+        var urlMatch = /<a\s+href=["']([^"']+)["']/.exec(cardHtml);
         if (!urlMatch) continue;
-        const url = MAIN_URL + urlMatch[1];
+        var url = MAIN_URL + urlMatch[1];
         
-        // Extract title from h3
-        const titleMatch = /<h3[^>]*>([^<]+)<\/h3>/.exec(cardHtml);
-        const title = titleMatch ? titleMatch[1].trim() : "";
+        // Extract title from h3 - handle whitespace
+        var titleMatch = /<h3[^>]*>([\s\S]*?)<\/h3>/.exec(cardHtml);
+        var title = titleMatch ? titleMatch[1].replace(/\s+/g, ' ').trim() : "";
         
         // Extract year from span (if present)
-        const yearMatch = /<span[^>]*class=["'][^"']*feedback[^"']*["'][^>]*>[\s\S]*?<span[^>]*>(\d{4})<\/span>/.exec(cardHtml);
-        const year = yearMatch ? yearMatch[1] : "";
+        var yearMatch = /<span[^>]*class=["'][^"']*feedback[^"']*["'][^>]*>[\s\S]*?<span[^>]*>(\d{4})<\/span>/.exec(cardHtml);
+        var year = yearMatch ? yearMatch[1] : "";
         
-        // Extract poster
-        const posterMatch = /<img[^>]+src=["']([^"']+)["']/.exec(cardHtml);
-        let poster = posterMatch ? posterMatch[1] : "";
-        
-        // If it's a relative URL, make it absolute
-        if (poster && poster.startsWith('/')) {
-            poster = MAIN_URL + poster;
-        }
-        // Skip blank posters
-        if (poster.includes('blank_poster.png')) {
-            poster = "";
+        // Extract poster - get first src before onerror
+        var posterMatch = /<img[^>]*\ssrc=["']([^"']+)["']/.exec(cardHtml);
+        var poster = "";
+        if (posterMatch) {
+            poster = posterMatch[1];
+            // If it's a relative URL, make it absolute
+            if (poster.startsWith('/')) {
+                poster = MAIN_URL + poster;
+            }
+            // Skip blank posters
+            if (poster.includes('blank_poster.png')) {
+                poster = "";
+            }
         }
         
         // Extract quality tag
-        const qualityMatch = /<span[^>]*>([A-Z0-9\-]+(?:\s*\|\s*[A-Z]+)?)<\/span>/.exec(cardHtml);
-        const qualityText = qualityMatch ? qualityMatch[1].trim() : "";
+        var qualityMatch = /<span[^>]*>([A-Z0-9\-]+(?:\s*\|\s*[A-Z]+)?)<\/span>/.exec(cardHtml);
+        var qualityText = qualityMatch ? qualityMatch[1].trim() : "";
         
         // Determine quality
-        const quality = getSearchQuality(qualityText);
+        var quality = getSearchQuality(qualityText);
         
         // Check for DUAL audio
-        const isDual = qualityText.toUpperCase().includes("DUAL");
+        var isDual = qualityText.toUpperCase().includes("DUAL");
         
         if (title) {
             items.push({
@@ -165,180 +202,142 @@ function parseMovieCards(html) {
     return items;
 }
 
-function search(query, callback) {
-    login((success) => {
-        const headers = Object.assign({}, commonHeaders);
-        if (loginCookie) {
-            headers["Cookie"] = loginCookie;
+async function search(query) {
+    if (!query) return [];
+    
+    await login();
+    
+    var headers = Object.assign({}, commonHeaders);
+    if (loginCookie) {
+        headers["Cookie"] = loginCookie;
+    }
+    
+    var searchUrl = MAIN_URL + "/m/find/" + encodeURIComponent(query);
+    
+    try {
+        var html = await _fetch(searchUrl, headers);
+        var movies = [];
+        
+        if (html && typeof html === 'string') {
+            movies = parseMovieCards(html);
         }
         
-        const searchUrl = MAIN_URL + "/m/find/" + encodeURIComponent(query);
-        
-        try {
-            http_get(searchUrl, headers, (status, html) => {
-                try {
-                    let movies = [];
-                    if (html && typeof html === 'string') {
-                        movies = parseMovieCards(html);
-                    }
-                    
-                    const result = [];
-                    if (movies && movies.length > 0) {
-                        result.push({
-                            title: "Search Results",
-                            Data: movies
-                        });
-                    }
-                    
-                    callback(JSON.stringify(result));
-                } catch (e) {
-                    callback(JSON.stringify([]));
-                }
-            });
-        } catch (e) {
-            callback(JSON.stringify([]));
-        }
-    });
+        return movies.map(function(item) {
+            return {
+                title: item.name,
+                url: item.link,
+                posterUrl: item.image,
+                isFolder: false
+            };
+        });
+    } catch (e) {
+        return [];
+    }
 }
 
-function load(url, callback) {
-    login((success) => {
-        const headers = Object.assign({}, commonHeaders);
-        if (loginCookie) {
-            headers["Cookie"] = loginCookie;
+async function load(url) {
+    await login();
+    
+    var headers = Object.assign({}, commonHeaders);
+    if (loginCookie) {
+        headers["Cookie"] = loginCookie;
+    }
+    
+    try {
+        var html = await _fetch(url, headers);
+        
+        if (!html || typeof html !== 'string') {
+            return {
+                title: "Error loading content",
+                url: url,
+                description: "Could not load content from server",
+                posterUrl: "",
+                year: 0,
+                episodes: []
+            };
         }
         
-        try {
-            http_get(url, headers, (status, html) => {
-                try {
-                    if (!html || typeof html !== 'string') {
-                        // Return a valid empty response
-                        callback(JSON.stringify({
-                            url: url,
-                            data: JSON.stringify({ type: "movie", dataUrl: "", browseUrl: "" }),
-                            title: "Error loading content",
-                            description: "Could not load content from server",
-                            year: 0,
-                            subtitle: "",
-                            image: "",
-                            actors: [],
-                            recommendations: []
-                        }));
-                        return;
-                    }
-                    
-                    // Extract title
-                    const titleMatch = /<div class="movie-detail-content"[^>]*>[\s\S]*?<h3[^>]*>([^<]+)<\/h3>/.exec(html);
-                    const title = titleMatch ? titleMatch[1].trim() : "";
-                    
-                    // Alternative title extraction
-                    const altTitleMatch = /<h3[^>]*>([^<]+)<\/h3>/.exec(html);
-                    const finalTitle = title || (altTitleMatch ? altTitleMatch[1].trim() : "Unknown");
-                    
-                    // Extract poster
-                    const imgMatch = /<div class=["']movie-detail-banner["'][^>]*>[\s\S]*?<img[^>]+src=["']([^"']+)["']/.exec(html);
-                    let poster = imgMatch ? imgMatch[1] : "";
-                    
-                    // Handle relative poster URLs
-                    if (poster && poster.startsWith('/')) {
-                        poster = MAIN_URL + poster;
-                    }
-                    if (poster.includes('blank_poster.png')) {
-                        poster = "";
-                    }
-            
-            // Extract plot/storyline with improved pattern
-            const plotMatch = /<div class=["']storyline["'][^>]*>([\s\S]*?)<\/div>/.exec(html);
-            let plot = "";
-            if (plotMatch) {
-                plot = plotMatch[1]
-                    .replace(/<[^>]+>/g, '') // Remove HTML tags
-                    .replace(/\s+/g, ' ')     // Normalize whitespace
-                    .trim();
-                
-                // Remove "Click Here" style text if present
-                if (plot.includes('Click Here For More Information')) {
-                    plot = plot.split('Click Here')[0].trim();
-                }
+        // Extract title
+        var titleMatch = /<div class=["']movie-detail-content["'][^>]*>[\s\S]*?<h3[^>]*>([^<]+)<\/h3>/.exec(html);
+        var title = titleMatch ? titleMatch[1].trim() : "";
+        
+        // Alternative title extraction
+        var altTitleMatch = /<h3[^>]*>([^<]+)<\/h3>/.exec(html);
+        var finalTitle = title || (altTitleMatch ? altTitleMatch[1].trim() : "Unknown");
+        
+        // Extract poster - get first src before onerror
+        var imgMatch = /<div class=["']movie-detail-banner["'][^>]*>[\s\S]*?<img[^>]*\ssrc=["']([^"']+)["']/.exec(html);
+        var poster = "";
+        if (imgMatch) {
+            poster = imgMatch[1];
+            // Handle relative poster URLs
+            if (poster.startsWith('/')) {
+                poster = MAIN_URL + poster;
             }
-            
-            // Extract file size
-            const sizeMatch = /<span class=["']badge badge-fill["']>([^<]+)<\/span>/.exec(html);
-            const size = sizeMatch ? sizeMatch[1].trim() : "";
-            
-            // Extract direct video URL - support mkv, mp4, avi
-            const dataUrlMatch = /<a[^>]+href=["'](http[^"']+\.(?:mkv|mp4|avi)[^"']*)["']/.exec(html);
-            const dataUrl = dataUrlMatch ? dataUrlMatch[1] : "";
-            
-            // Extract browse URL for quality options
-            const browseMatch = /<a[^>]+href=["']([^"']+)["'][^>]*>[\s\S]*?Browse[\s\S]*?<\/a>/i.exec(html);
-            const browseUrl = browseMatch ? browseMatch[1] : "";
-            
-            // Extract genres
-            const genres = extractGenres(html);
-            
-            // Extract actors
-            const actors = extractActors(html);
-            
-            // Extract quality recommendations (different quality versions)
-            const recommendations = extractQualityRecommendations(html, finalTitle, poster);
-            
-            // Build description
-            let description = "";
-            if (size) {
-                description += "<b>Size: " + size + "</b><br><br>";
+            if (poster.includes('blank_poster.png')) {
+                poster = "";
             }
-            description += plot;
-            if (genres.length > 0) {
-                description += "<br><br><b>Genres:</b> " + genres.join(", ");
-            }
-            
-            const loadData = {
-                type: "movie",
-                dataUrl: dataUrl,
-                browseUrl: browseUrl
-            };
-            
-            callback(JSON.stringify({
-                url: url,
-                data: JSON.stringify(loadData),
-                title: finalTitle,
-                description: description,
-                year: 0,
-                subtitle: size,
-                image: poster,
-                actors: actors,
-                recommendations: recommendations
-            }));
-                } catch (e) {
-                    // Return a valid error response
-                    callback(JSON.stringify({
-                        url: url,
-                        data: JSON.stringify({ type: "movie", dataUrl: "", browseUrl: "" }),
-                        title: "Error",
-                        description: "Error parsing content",
-                        year: 0,
-                        subtitle: "",
-                        image: "",
-                        actors: [],
-                        recommendations: []
-                    }));
-                }
-            });
-        } catch (e) {
-            callback(JSON.stringify({
-                url: url,
-                data: JSON.stringify({ type: "movie", dataUrl: "", browseUrl: "" }),
-                title: "Error",
-                description: "Could not connect to server",
-                year: 0,
-                subtitle: "",
-                image: "",
-                actors: [],
-                recommendations: []
-            }));
         }
-    });
+        
+        // Extract plot/storyline from <p class="storyline">
+        var plotMatch = /<p class=["']storyline["'][^>]*>([\s\S]*?)<\/p>/.exec(html);
+        var plot = "";
+        if (plotMatch) {
+            // Clean the text - remove HTML tags and extra whitespace
+            plot = plotMatch[1]
+                .replace(/<[^>]+>/g, '') // Remove HTML tags
+                .replace(/\s+/g, ' ')     // Normalize whitespace
+                .trim();
+            
+            // Remove "Click Here" style text if present
+            if (plot.includes('Click Here For More Information')) {
+                plot = plot.split('Click Here')[0].trim();
+            }
+        }
+        
+        // Extract file size
+        var sizeMatch = /<span class=["']badge badge-fill["']>([^<]+)<\/span>/.exec(html);
+        var size = sizeMatch ? sizeMatch[1].trim() : "";
+        
+        // Extract direct video URL - support mkv, mp4, avi
+        var dataUrlMatch = /<a[^>]+href=["'](http[^"']+\.(?:mkv|mp4|avi)[^"']*)["']/.exec(html);
+        var dataUrl = dataUrlMatch ? dataUrlMatch[1] : "";
+        
+        // Extract browse URL for quality options
+        var browseMatch = /<a[^>]+href=["']([^"']+)["'][^>]*>[\s\S]*?Browse[\s\S]*?<\/a>/i.exec(html);
+        var browseUrl = browseMatch ? browseMatch[1] : "";
+        
+        // Use plot as description (don't append genres)
+        var description = plot;
+        
+        return {
+            title: finalTitle,
+            url: url,
+            description: description,
+            posterUrl: poster,
+            year: 0,
+            episodes: [
+                {
+                    name: finalTitle + (size ? " [" + size + "]" : ""),
+                    url: dataUrl || url,
+                    season: 1,
+                    episode: 1,
+                    posterUrl: poster,
+                    description: description,
+                    isPlaying: true
+                }
+            ]
+        };
+    } catch (e) {
+        return {
+            title: "Error",
+            url: url,
+            description: "Could not connect to server",
+            posterUrl: "",
+            year: 0,
+            episodes: []
+        };
+    }
 }
 
 function extractGenres(html) {
@@ -409,104 +408,70 @@ function extractQualityRecommendations(html, title, poster) {
     return recommendations;
 }
 
-function loadStreams(url, callback) {
-    login((success) => {
-        const headers = Object.assign({}, commonHeaders);
-        if (loginCookie) {
-            headers["Cookie"] = loginCookie;
+async function loadStreams(url) {
+    await login();
+    
+    var headers = Object.assign({}, commonHeaders);
+    if (loginCookie) {
+        headers["Cookie"] = loginCookie;
+    }
+    
+    try {
+        var html = await _fetch(url, headers);
+        var streams = [];
+        
+        if (!html || typeof html !== 'string') {
+            return [];
         }
         
-        try {
-        http_get(url, headers, (status, html) => {
-            try {
-            const streams = [];
-            
-            if (!html || typeof html !== 'string') {
-                callback(JSON.stringify([]));
-                return;
-            }
-            
-            // Extract direct video URL - support mkv, mp4, avi
-            const dataUrlMatch = /<a[^>]+href=["'](http[^"']+\.(?:mkv|mp4|avi)[^"']*)["']/.exec(html);
-            const dataUrl = dataUrlMatch ? dataUrlMatch[1] : "";
-            
-            // Extract browse URL for mirror links
-            const browseMatch = /<a[^>]+href=["']([^"']+)["'][^>]*>[\s\S]*?Browse[\s\S]*?<\/a>/i.exec(html);
-            const browseUrl = browseMatch ? browseMatch[1] : "";
-            
-            if (dataUrl) {
-                streams.push({
-                    name: "(BDIX) Dflix Movies",
-                    url: dataUrl,
-                    headers: headers
-                });
-            }
-            
-            // If we have a browse URL, fetch mirror links
-            if (browseUrl) {
-                http_get(browseUrl, headers, (browseStatus, browseHtml) => {
-                    // Parse directory listing for .mkv files
-                    const filePattern = /\|\s*\|\s*([^|]*\.(?:mkv|mp4|avi))\s*\|\s*[^|]*\s*\|\s*([^|]*?(?:KB|MB|GB|TB))\s*\|/gi;
-                    let match;
-                    const processedFiles = new Set();
-                    
-                    while ((match = filePattern.exec(browseHtml)) !== null) {
-                        const fileName = match[1].trim();
-                        const fileSize = match[2].trim();
-                        
-                        if (!processedFiles.has(fileName)) {
-                            processedFiles.add(fileName);
-                            const fileUrl = browseUrl.replace(/\/$/, '') + "/" + encodeURIComponent(fileName);
-                            const qualityLabel = getQualityLabel(fileName);
-                            
-                            streams.push({
-                                name: "[Mirror] " + qualityLabel + " - " + fileSize,
-                                url: fileUrl,
-                                headers: headers
-                            });
-                        }
-                    }
-                    
-                    // Fallback: try to find any video files
-                    if (processedFiles.size === 0) {
-                        const generalPattern = /href="([^"]*\.(?:mkv|mp4|avi))"/gi;
-                        while ((match = generalPattern.exec(browseHtml)) !== null) {
-                            const fileName = match[1].trim();
-                            
-                            if (!processedFiles.has(fileName)) {
-                                processedFiles.add(fileName);
-                                const fileUrl = browseUrl.replace(/\/$/, '') + "/" + encodeURIComponent(fileName);
-                                const qualityLabel = getQualityLabel(fileName);
-                                
-                                streams.push({
-                                    name: "[Mirror] " + qualityLabel,
-                                    url: fileUrl,
-                                    headers: headers
-                                });
-                            }
-                        }
-                    }
-                    
-                    callback(JSON.stringify(streams));
-                });
-            } else {
-                callback(JSON.stringify(streams));
-            }
-            } catch (e) {
-                callback(JSON.stringify([]));
-            }
-        });
-        } catch (e) {
-            callback(JSON.stringify([]));
+        // Extract direct video URL - support mkv, mp4, avi
+        var dataUrlMatch = /<a[^>]+href=["'](http[^"']+\.(?:mkv|mp4|avi)[^"']*)["']/.exec(html);
+        var dataUrl = dataUrlMatch ? dataUrlMatch[1] : "";
+        
+        if (dataUrl) {
+            streams.push({
+                url: dataUrl,
+                quality: "Default",
+                isM3u8: false,
+                headers: headers
+            });
         }
-    });
+        
+        return streams;
+    } catch (e) {
+        return [];
+    }
+}
+
+async function _fetch(url, extraHeaders) {
+    var headers = Object.assign({}, commonHeaders);
+    var cookieStr = "";
+    if (loginCookie) {
+        cookieStr = loginCookie;
+    }
+    if (cookieStr) {
+        headers["Cookie"] = cookieStr;
+    }
+
+    if (extraHeaders) {
+        for (var k in extraHeaders) {
+            headers[k] = extraHeaders[k];
+        }
+    }
+
+    var res = await http_get(url, headers);
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+        return res.body;
+    } else {
+        throw "HTTP Error " + res.statusCode + " fetching " + url;
+    }
 }
 
 // Helper function to determine search quality
 function getSearchQuality(check) {
     if (!check) return null;
     
-    const lower = check.toLowerCase();
+    var lower = check.toLowerCase();
     
     if (lower.includes("4k")) return "FourK";
     if (lower.includes("web-r") || lower.includes("web-dl") || lower.includes("webrip")) return "WebRip";
@@ -520,7 +485,7 @@ function getSearchQuality(check) {
 
 // Helper function to get quality label from filename
 function getQualityLabel(fileName) {
-    const lower = fileName.toLowerCase();
+    var lower = fileName.toLowerCase();
     
     if (lower.includes("4k") && lower.includes("2160p")) return "4K UHD";
     if (lower.includes("4k")) return "4K";
@@ -540,5 +505,3 @@ globalThis.getHome = getHome;
 globalThis.search = search;
 globalThis.load = load;
 globalThis.loadStreams = loadStreams;
-globalThis.loadLinks = loadStreams;
-globalThis.loadUrl = loadStreams;
