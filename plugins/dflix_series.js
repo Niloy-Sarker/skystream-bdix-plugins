@@ -161,7 +161,7 @@ function parseSeriesCards(html) {
         var title = titleMatch ? titleMatch[1].replace(/\s+/g, ' ').trim() : "";
         
         // Extract poster from img src - get first src= before onerror
-        var posterMatch = /<img[^>]*\ssrc=['"]([^'"]+)['"]/.exec(cardHtml);
+        var posterMatch = /<img[^>]*src=['"]([^'"]+)['"]/.exec(cardHtml);
         var poster = "";
         if (posterMatch) {
             poster = posterMatch[1];
@@ -242,9 +242,16 @@ async function search(query) {
                 var titleMatch = /<div class=['"]searchtitle['"][^>]*>([^<]+)<\/div>/.exec(itemHtml);
                 var title = titleMatch ? titleMatch[1].trim() : "";
                 
-                // Extract poster from img src
-                var posterMatch = /<img[^>]+src=['"]([^'"]+)['"]/.exec(itemHtml);
-                var poster = posterMatch ? posterMatch[1] : "";
+                // Extract poster from img src - handle both with and without space before src
+                var posterMatch = /<img[^>]*src=['"]([^'"]+)['"]/.exec(itemHtml);
+                var poster = "";
+                if (posterMatch) {
+                    poster = posterMatch[1];
+                    // Skip blank_poster
+                    if (poster.includes('blank_poster.png')) {
+                        poster = "";
+                    }
+                }
                 
                 if (title) {
                     series.push({
@@ -293,9 +300,16 @@ async function load(url) {
         var altTitleMatch = /<h3[^>]*>([^<]+)<\/h3>/.exec(html);
         var finalTitle = title || (altTitleMatch ? altTitleMatch[1].trim() : "Unknown");
         
-        // Extract poster
-        var imgMatch = /<div class=['"]movie-detail-banner['"][^>]*>[\s\S]*?<img[^>]+src=['"]([^'"]+)['"]/.exec(html);
-        var poster = imgMatch ? imgMatch[1] : "";
+        // Extract poster - handle both with and without space before src
+        var imgMatch = /<div class=['"]movie-detail-banner['"][^>]*>[\s\S]*?<img[^>]*src=['"]([^'"]+)['"]/.exec(html);
+        var poster = "";
+        if (imgMatch) {
+            poster = imgMatch[1];
+            // Skip blank_poster
+            if (poster.includes('blank_poster.png')) {
+                poster = "";
+            }
+        }
         
         // Extract plot/storyline from <p class="storyline" style="display: block">
         var plotMatch = /<p class=['"]storyline['"][^>]*>([\s\S]*?)<\/p>/.exec(html);

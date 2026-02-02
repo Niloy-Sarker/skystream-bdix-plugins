@@ -162,8 +162,8 @@ function parseMovieCards(html) {
         var yearMatch = /<span[^>]*class=["'][^"']*feedback[^"']*["'][^>]*>[\s\S]*?<span[^>]*>(\d{4})<\/span>/.exec(cardHtml);
         var year = yearMatch ? yearMatch[1] : "";
         
-        // Extract poster - get first src before onerror
-        var posterMatch = /<img[^>]*\ssrc=["']([^"']+)["']/.exec(cardHtml);
+        // Extract poster - handle both with and without space before src
+        var posterMatch = /<img[^>]*src=['"]([^'"]+)['"]/.exec(cardHtml);
         var poster = "";
         if (posterMatch) {
             poster = posterMatch[1];
@@ -212,24 +212,58 @@ async function search(query) {
         headers["Cookie"] = loginCookie;
     }
     
-    var searchUrl = MAIN_URL + "/m/find/" + encodeURIComponent(query);
+    var searchUrl = MAIN_URL + "/search";
+    var formData = "term=" + encodeURIComponent(query) + "&types=m";
+    
+    var postHeaders = Object.assign({}, headers);
+    postHeaders["Content-Type"] = "application/x-www-form-urlencoded";
     
     try {
-        var html = await _fetch(searchUrl, headers);
+        var res = await http_post(searchUrl, postHeaders, formData);
+        var html = res.body;
         var movies = [];
         
         if (html && typeof html === 'string') {
-            movies = parseMovieCards(html);
+            // Parse search results - <div class='moviesearchiteam ps-1 mb-1'>
+            // Inside: <a href="/m/view/ID"> with <div class="searchtitle">
+            var searchItemRegex = /<div class=['"]moviesearchiteam[^'"]*['"][^>]*>([\s\S]*?)<\/a>/g;
+            var match;
+            
+            while ((match = searchItemRegex.exec(html)) !== null) {
+                var itemHtml = match[1];
+                
+                // Extract URL - look for /m/view/ID
+                var urlMatch = /<a\s+href=['"](\/m\/view\/\d+)['"]/.exec(itemHtml);
+                if (!urlMatch) continue;
+                var url = MAIN_URL + urlMatch[1];
+                
+                // Extract title from searchtitle class
+                var titleMatch = /<div class=['"]searchtitle['"][^>]*>([^<]+)<\/div>/.exec(itemHtml);
+                var title = titleMatch ? titleMatch[1].trim() : "";
+                
+                // Extract poster from img src - handle both with and without space before src
+                var posterMatch = /<img[^>]*src=['"]([^'"]+)['"]/.exec(itemHtml);
+                var poster = "";
+                if (posterMatch) {
+                    poster = posterMatch[1];
+                    // Skip blank_poster
+                    if (poster.includes('blank_poster.png')) {
+                        poster = "";
+                    }
+                }
+                
+                if (title) {
+                    movies.push({
+                        title: title,
+                        url: url,
+                        posterUrl: poster,
+                        isFolder: false
+                    });
+                }
+            }
         }
         
-        return movies.map(function(item) {
-            return {
-                title: item.name,
-                url: item.link,
-                posterUrl: item.image,
-                isFolder: false
-            };
-        });
+        return movies;
     } catch (e) {
         return [];
     }
@@ -265,8 +299,8 @@ async function load(url) {
         var altTitleMatch = /<h3[^>]*>([^<]+)<\/h3>/.exec(html);
         var finalTitle = title || (altTitleMatch ? altTitleMatch[1].trim() : "Unknown");
         
-        // Extract poster - get first src before onerror
-        var imgMatch = /<div class=["']movie-detail-banner["'][^>]*>[\s\S]*?<img[^>]*\ssrc=["']([^"']+)["']/.exec(html);
+        // Extract poster - handle both with and without space before src
+        var imgMatch = /<div class=['"]movie-detail-banner['"][^>]*>[\s\S]*?<img[^>]*src=['"]([^'"]+)['"]/.exec(html);
         var poster = "";
         if (imgMatch) {
             poster = imgMatch[1];
