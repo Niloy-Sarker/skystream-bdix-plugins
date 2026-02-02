@@ -105,7 +105,7 @@ function parseMovieCards(html) {
     const items = [];
     
     // Pattern to match movie cards: div.card > a (with href) > poster + info
-    const cardRegex = /<div class="card">([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/g;
+    const cardRegex = /<div class=["']card["']>([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/g;
     let match;
     
     while ((match = cardRegex.exec(html)) !== null) {
@@ -115,7 +115,7 @@ function parseMovieCards(html) {
         if (cardHtml.includes('disable')) continue;
         
         // Extract URL
-        const urlMatch = /<a\s+href="([^"]+)"/.exec(cardHtml);
+        const urlMatch = /<a\s+href=["']([^"']+)["']/.exec(cardHtml);
         if (!urlMatch) continue;
         const url = MAIN_URL + urlMatch[1];
         
@@ -124,12 +124,21 @@ function parseMovieCards(html) {
         const title = titleMatch ? titleMatch[1].trim() : "";
         
         // Extract year from span (if present)
-        const yearMatch = /<span[^>]*class="[^"]*feedback[^"]*"[^>]*>[\s\S]*?<span[^>]*>(\d{4})<\/span>/.exec(cardHtml);
+        const yearMatch = /<span[^>]*class=["'][^"']*feedback[^"']*["'][^>]*>[\s\S]*?<span[^>]*>(\d{4})<\/span>/.exec(cardHtml);
         const year = yearMatch ? yearMatch[1] : "";
         
         // Extract poster
-        const posterMatch = /<img[^>]+src="([^"]+)"/.exec(cardHtml);
-        const poster = posterMatch ? posterMatch[1] : "";
+        const posterMatch = /<img[^>]+src=["']([^"']+)["']/.exec(cardHtml);
+        let poster = posterMatch ? posterMatch[1] : "";
+        
+        // If it's a relative URL, make it absolute
+        if (poster && poster.startsWith('/')) {
+            poster = MAIN_URL + poster;
+        }
+        // Skip blank posters
+        if (poster.includes('blank_poster.png')) {
+            poster = "";
+        }
         
         // Extract quality tag
         const qualityMatch = /<span[^>]*>([A-Z0-9\-]+(?:\s*\|\s*[A-Z]+)?)<\/span>/.exec(cardHtml);
@@ -141,14 +150,16 @@ function parseMovieCards(html) {
         // Check for DUAL audio
         const isDual = qualityText.toUpperCase().includes("DUAL");
         
-        items.push({
-            name: title + (year ? " " + year : ""),
-            link: url,
-            image: poster,
-            description: qualityText,
-            quality: quality,
-            dubStatus: isDual ? "Dubbed" : null
-        });
+        if (title) {
+            items.push({
+                name: title + (year ? " " + year : ""),
+                link: url,
+                image: poster,
+                description: qualityText,
+                quality: quality,
+                dubStatus: isDual ? "Dubbed" : null
+            });
+        }
     }
     
     return items;
@@ -225,23 +236,42 @@ function load(url, callback) {
                     const finalTitle = title || (altTitleMatch ? altTitleMatch[1].trim() : "Unknown");
                     
                     // Extract poster
-                    const imgMatch = /<div class="movie-detail-banner"[^>]*>[\s\S]*?<img[^>]+src="([^"]+)"/.exec(html);
-                    const poster = imgMatch ? imgMatch[1] : "";
+                    const imgMatch = /<div class=["']movie-detail-banner["'][^>]*>[\s\S]*?<img[^>]+src=["']([^"']+)["']/.exec(html);
+                    let poster = imgMatch ? imgMatch[1] : "";
+                    
+                    // Handle relative poster URLs
+                    if (poster && poster.startsWith('/')) {
+                        poster = MAIN_URL + poster;
+                    }
+                    if (poster.includes('blank_poster.png')) {
+                        poster = "";
+                    }
             
-            // Extract plot/storyline
-            const plotMatch = /<div class="storyline"[^>]*>([^<]+)<\/div>/.exec(html);
-            const plot = plotMatch ? plotMatch[1].trim() : "";
+            // Extract plot/storyline with improved pattern
+            const plotMatch = /<div class=["']storyline["'][^>]*>([\s\S]*?)<\/div>/.exec(html);
+            let plot = "";
+            if (plotMatch) {
+                plot = plotMatch[1]
+                    .replace(/<[^>]+>/g, '') // Remove HTML tags
+                    .replace(/\s+/g, ' ')     // Normalize whitespace
+                    .trim();
+                
+                // Remove "Click Here" style text if present
+                if (plot.includes('Click Here For More Information')) {
+                    plot = plot.split('Click Here')[0].trim();
+                }
+            }
             
             // Extract file size
-            const sizeMatch = /<span class="badge badge-fill">([^<]+)<\/span>/.exec(html);
+            const sizeMatch = /<span class=["']badge badge-fill["']>([^<]+)<\/span>/.exec(html);
             const size = sizeMatch ? sizeMatch[1].trim() : "";
             
-            // Extract direct video URL
-            const dataUrlMatch = /<a[^>]+href="(http[^"]+\.(?:mkv|mp4|avi)[^"]*)"/.exec(html);
+            // Extract direct video URL - support mkv, mp4, avi
+            const dataUrlMatch = /<a[^>]+href=["'](http[^"']+\.(?:mkv|mp4|avi)[^"']*)["']/.exec(html);
             const dataUrl = dataUrlMatch ? dataUrlMatch[1] : "";
             
             // Extract browse URL for quality options
-            const browseMatch = /<a[^>]+href="([^"]+)"[^>]*>[\s\S]*?Browse[\s\S]*?<\/a>/i.exec(html);
+            const browseMatch = /<a[^>]+href=["']([^"']+)["'][^>]*>[\s\S]*?Browse[\s\S]*?<\/a>/i.exec(html);
             const browseUrl = browseMatch ? browseMatch[1] : "";
             
             // Extract genres
@@ -313,7 +343,7 @@ function load(url, callback) {
 
 function extractGenres(html) {
     const genres = [];
-    const genreWrapperMatch = /<div class="ganre-wrapper[^"]*">([\s\S]*?)<\/div>/.exec(html);
+    const genreWrapperMatch = /<div class=["']ganre-wrapper[^"']*["']>([\s\S]*?)<\/div>/.exec(html);
     
     if (genreWrapperMatch) {
         const genreRegex = /<a[^>]*>([^<]+)<\/a>/g;
@@ -331,18 +361,18 @@ function extractGenres(html) {
 
 function extractActors(html) {
     const actors = [];
-    const actorRegex = /<div class="col-lg-2"[^>]*>([\s\S]*?)<\/div>/g;
+    const actorRegex = /<div class=["']col-lg-2["'][^>]*>([\s\S]*?)<\/div>/g;
     let match;
     
     while ((match = actorRegex.exec(html)) !== null) {
         const actorHtml = match[1];
         
-        const imgMatch = /<img[^>]+src="([^"]+)"[^>]+alt="([^"]*)"/.exec(actorHtml);
+        const imgMatch = /<img[^>]+src=["']([^"']+)["'][^>]+alt=["']([^"']*)["']/.exec(actorHtml);
         if (imgMatch) {
             const actorImg = imgMatch[1];
             const actorName = imgMatch[2];
             
-            const roleMatch = /<p class="text-center text-white">([^<]*)<\/p>/.exec(actorHtml);
+            const roleMatch = /<p class=["']text-center text-white["']>([^<]*)<\/p>/.exec(actorHtml);
             const role = roleMatch ? roleMatch[1].trim() : "";
             
             actors.push({
@@ -358,10 +388,10 @@ function extractActors(html) {
 
 function extractQualityRecommendations(html, title, poster) {
     const recommendations = [];
-    const badgeRegex = /<div class="badge-outline"[^>]*>([\s\S]*?)<\/div>/.exec(html);
+    const badgeRegex = /<div class=["']badge-outline["'][^>]*>([\s\S]*?)<\/div>/.exec(html);
     
     if (badgeRegex) {
-        const linkRegex = /<a[^>]+href="([^"]+)"[^>]*>([^<]+)<\/a>/g;
+        const linkRegex = /<a[^>]+href=["']([^"']+)["'][^>]*>([^<]+)<\/a>/g;
         let match;
         
         while ((match = linkRegex.exec(badgeRegex[1])) !== null) {
@@ -396,12 +426,12 @@ function loadStreams(url, callback) {
                 return;
             }
             
-            // Extract direct video URL
-            const dataUrlMatch = /<a[^>]+href="(http[^"]+\.(?:mkv|mp4|avi)[^"]*)"/.exec(html);
+            // Extract direct video URL - support mkv, mp4, avi
+            const dataUrlMatch = /<a[^>]+href=["'](http[^"']+\.(?:mkv|mp4|avi)[^"']*)["']/.exec(html);
             const dataUrl = dataUrlMatch ? dataUrlMatch[1] : "";
             
             // Extract browse URL for mirror links
-            const browseMatch = /<a[^>]+href="([^"]+)"[^>]*>[\s\S]*?Browse[\s\S]*?<\/a>/i.exec(html);
+            const browseMatch = /<a[^>]+href=["']([^"']+)["'][^>]*>[\s\S]*?Browse[\s\S]*?<\/a>/i.exec(html);
             const browseUrl = browseMatch ? browseMatch[1] : "";
             
             if (dataUrl) {

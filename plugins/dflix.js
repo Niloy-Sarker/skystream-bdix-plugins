@@ -99,29 +99,43 @@ function getHome(callback) {
                         });
                     }
                 } else {
-                    // Extract series cards
-                    const cardRegex = /<div class="col-xl-4">([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/g;
+                    // Extract series cards - improved pattern from dflix_series.js
+                    const cardRegex = /<div class=['"]col-xl-4[^>]*>([\s\S]*?)<\/div>\s*<\/div>(?:\s*<\/a>)?(?:\s*<\/div>)?/g;
                     let match;
                     
                     while ((match = cardRegex.exec(html)) !== null) {
                         const cardHtml = match[1];
                         
-                        const urlMatch = /<a\s+href="([^"]+)"/.exec(cardHtml);
+                        // Extract URL - look for /s/view/ID pattern
+                        const urlMatch = /<a[^>]+href=['"](\/s\/view\/\d+)['"]/.exec(cardHtml);
                         if (!urlMatch) continue;
                         const url = MAIN_URL + urlMatch[1];
                         
-                        const titleMatch = /<div class="fcard"[^>]*>[\s\S]*?<div[^>]*>([^<]+)<\/div>/.exec(cardHtml);
+                        // Extract title from <div class='ftitle'>
+                        const titleMatch = /<div class=['"]ftitle['"][^>]*>([^<]+)<\/div>/.exec(cardHtml);
                         const title = titleMatch ? titleMatch[1].trim() : "";
                         
-                        const posterMatch = /<img[^>]+src="([^"]+)"/.exec(cardHtml);
-                        const poster = posterMatch ? posterMatch[1] : "";
+                        // Extract poster from img src
+                        const posterMatch = /<img[^>]+src=['"]([^'"]+)['"]/.exec(cardHtml);
+                        let poster = posterMatch ? posterMatch[1] : "";
                         
-                        items.push({
-                            name: title,
-                            link: url,
-                            image: poster,
-                            description: ""
-                        });
+                        // If it's a relative URL, make it absolute
+                        if (poster && poster.startsWith('/')) {
+                            poster = MAIN_URL + poster;
+                        }
+                        // Skip blank posters
+                        if (poster.includes('blank_poster.png')) {
+                            poster = "";
+                        }
+                        
+                        if (title) {
+                            items.push({
+                                name: title,
+                                link: url,
+                                image: poster,
+                                description: ""
+                            });
+                        }
                     }
                 }
                 
@@ -236,25 +250,34 @@ function search(query, callback) {
         http_post(seriesSearchUrl, formData, postHeaders, (status, html) => {
             const series = [];
             
-            const searchItemRegex = /<div class="moviesearchiteam">[\s\S]*?<a\s+href="([^"]+)"([\s\S]*?)<\/a>[\s\S]*?<\/div>/g;
+            // Improved pattern from dflix_series.js
+            const searchItemRegex = /<div class=['"']moviesearchiteam[^'"]*['"'][^>]*>([\s\S]*?)<\/a>/g;
             let match;
             
             while ((match = searchItemRegex.exec(html)) !== null) {
-                const url = MAIN_URL + match[1];
-                const itemHtml = match[2];
+                const itemHtml = match[1];
                 
-                const titleMatch = /<div class="searchtitle">([^<]+)<\/div>/.exec(itemHtml);
+                // Extract URL - look for /s/view/ID
+                const urlMatch = /<a\s+href=['"](\/s\/view\/\d+)['"]/.exec(itemHtml);
+                if (!urlMatch) continue;
+                const url = MAIN_URL + urlMatch[1];
+                
+                // Extract title from searchtitle class
+                const titleMatch = /<div class=['"']searchtitle['"'][^>]*>([^<]+)<\/div>/.exec(itemHtml);
                 const title = titleMatch ? titleMatch[1].trim() : "";
                 
-                const posterMatch = /<img[^>]+src="([^"]+)"/.exec(itemHtml);
+                // Extract poster from img src
+                const posterMatch = /<img[^>]+src=['"']([^'"']+)['"]/.exec(itemHtml);
                 const poster = posterMatch ? posterMatch[1] : "";
                 
-                series.push({
-                    name: title,
-                    link: url,
-                    image: poster,
-                    description: ""
-                });
+                if (title) {
+                    series.push({
+                        name: title,
+                        link: url,
+                        image: poster,
+                        description: ""
+                    });
+                }
             }
             
             if (series.length > 0) {
@@ -336,8 +359,28 @@ function load(url, callback) {
                     image: poster
                 }));
             } else {
-                // Series loading logic
-                const seasonRegex = /<table class="table mb-0">[\s\S]*?<tbody>([\s\S]*?)<\/tbody>[\s\S]*?<\/table>/;
+                // Series loading logic - improved from dflix_series.js
+                
+                // Extract plot from storyline paragraph with better pattern
+                const plotMatch = /<p class=['"']storyline['"'][^>]*>([\s\S]*?)<\/p>/.exec(html);
+                let betterPlot = "";
+                if (plotMatch) {
+                    betterPlot = plotMatch[1]
+                        .replace(/<[^>]+>/g, '') // Remove HTML tags
+                        .replace(/\s+/g, ' ')     // Normalize whitespace
+                        .trim();
+                    
+                    // Remove "Click Here" style text if present
+                    if (betterPlot.includes('Click Here For More Information')) {
+                        betterPlot = betterPlot.split('Click Here')[0].trim();
+                    }
+                }
+                
+                // Use better plot if available
+                const finalPlot = betterPlot || plot;
+                
+                // Extract seasons
+                const seasonRegex = /<table class="table mb-0"[^>]*>[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/;
                 const seasonTableMatch = seasonRegex.exec(html);
                 
                 const seasonData = {
@@ -345,24 +388,24 @@ function load(url, callback) {
                     url: url,
                     title: title,
                     poster: poster,
-                    plot: plot,
+                    plot: finalPlot,
                     genres: genres,
                     seasons: []
                 };
                 
                 if (seasonTableMatch) {
-                    const seasonLinks = seasonTableMatch[1].match(/<a\s+href="([^"]+)"[^>]*>/g);
-                    if (seasonLinks) {
-                        seasonLinks.reverse().forEach(link => {
-                            const urlMatch = /href="([^"]+)"/.exec(link);
-                            if (urlMatch) {
-                                seasonData.seasons.push(urlMatch[1]);
-                            }
-                        });
+                    const seasonLinkRegex = /<a\s+href="([^"]+)"[^>]*>/g;
+                    let seasonMatch;
+                    
+                    while ((seasonMatch = seasonLinkRegex.exec(seasonTableMatch[1])) !== null) {
+                        seasonData.seasons.push(seasonMatch[1]);
                     }
+                    
+                    // Reverse to get proper order (oldest first)
+                    seasonData.seasons.reverse();
                 }
                 
-                const description = plot + (genres ? "<br><br><b>Genres:</b> " + genres : "");
+                const description = finalPlot + (genres ? "<br><br><b>Genres:</b> " + genres : "");
                 
                 callback(JSON.stringify({
                     url: url,
@@ -457,12 +500,35 @@ function loadStreams(url, callback) {
                     callback(JSON.stringify(streams));
                 }
             } else {
-                // Series/Episode stream extraction
-                const streamMatch = /<a[^>]+href="(http[^"]+\.mkv[^"]*)"/.exec(html);
+                // Series/Episode stream extraction - improved from dflix_series.js
+                
+                // Try to find video link with mkv/mp4/avi extensions
+                const streamMatch = /<a[^>]+href="(http[^"]+\.(?:mkv|mp4|avi)[^"]*)"/.exec(html);
                 if (streamMatch) {
                     streams.push({
                         name: "Stream",
                         url: streamMatch[1],
+                        headers: headers
+                    });
+                }
+                
+                // Try alternative: look for any video source
+                if (streams.length === 0) {
+                    const videoMatch = /(?:src|href)=["'](http[^"']+\.(?:mkv|mp4|avi)[^"']*)["']/i.exec(html);
+                    if (videoMatch) {
+                        streams.push({
+                            name: "Stream",
+                            url: videoMatch[1],
+                            headers: headers
+                        });
+                    }
+                }
+                
+                // If URL itself looks like an episode page with no extracted stream, use it directly
+                if (streams.length === 0 && url.includes("/s/")) {
+                    streams.push({
+                        name: "Default",
+                        url: url,
                         headers: headers
                     });
                 }

@@ -160,9 +160,20 @@ function parseSeriesCards(html) {
         var titleMatch = /<div class=['"]ftitle['"][^>]*>([^<]+)<\/div>/.exec(cardHtml);
         var title = titleMatch ? titleMatch[1].trim() : "";
         
-        // Extract poster from img src
+        // Extract poster from img src - images are already full URLs
         var posterMatch = /<img[^>]+src=['"]([^'"]+)['"]/.exec(cardHtml);
-        var poster = posterMatch ? posterMatch[1] : "";
+        var poster = "";
+        if (posterMatch) {
+            poster = posterMatch[1];
+            // If it's a relative URL, make it absolute
+            if (poster.startsWith('/')) {
+                poster = MAIN_URL + poster;
+            }
+            // Replace blank_poster with empty string
+            if (poster.includes('blank_poster.png')) {
+                poster = "";
+            }
+        }
         
         // Extract genres from fdetails to determine type
         var genreMatch = /<div class=['"]fdetails['"][^>]*>([^<]+)</.exec(cardHtml);
@@ -283,12 +294,24 @@ async function load(url) {
         var finalTitle = title || (altTitleMatch ? altTitleMatch[1].trim() : "Unknown");
         
         // Extract poster
-        var imgMatch = /<div class="movie-detail-banner"[^>]*>[\s\S]*?<img[^>]+src="([^"]+)"/.exec(html);
+        var imgMatch = /<div class=['"]movie-detail-banner['"][^>]*>[\s\S]*?<img[^>]+src=['"]([^'"]+)['"]/.exec(html);
         var poster = imgMatch ? imgMatch[1] : "";
         
-        // Extract plot/storyline
-        var plotMatch = /<div class="storyline"[^>]*>([^<]+)<\/div>/.exec(html);
-        var plot = plotMatch ? plotMatch[1].trim() : "";
+        // Extract plot/storyline from <p class="storyline" style="display: block">
+        var plotMatch = /<p class=['"]storyline['"][^>]*>([\s\S]*?)<\/p>/.exec(html);
+        var plot = "";
+        if (plotMatch) {
+            // Clean the text - remove HTML tags and extra whitespace
+            plot = plotMatch[1]
+                .replace(/<[^>]+>/g, '') // Remove HTML tags
+                .replace(/\s+/g, ' ')     // Normalize whitespace
+                .trim();
+            
+            // Remove "Click Here" style text if present
+            if (plot.includes('Click Here For More Information')) {
+                plot = plot.split('Click Here')[0].trim();
+            }
+        }
         
         // Extract genres
         var genres = extractGenres(html);
