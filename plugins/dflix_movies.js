@@ -79,12 +79,12 @@ async function getHome() {
     await login();
     
     var categories = [
-        { title: "Bangla", url: MAIN_URL + "/m/category/Bangla/1" },
-        { title: "English", url: MAIN_URL + "/m/category/English/1" },
-        { title: "Hindi", url: MAIN_URL + "/m/category/Hindi/1" },
-        { title: "Tamil", url: MAIN_URL + "/m/category/Tamil/1" },
-        { title: "Animation", url: MAIN_URL + "/m/category/Animation/1" },
-        { title: "Others", url: MAIN_URL + "/m/category/Others/1" }
+        { title: "Action", url: MAIN_URL + "/m/genre/Action" },
+        { title: "Adventure", url: MAIN_URL + "/m/genre/Adventure" },
+        { title: "Comedy", url: MAIN_URL + "/m/genre/Comedy" },
+        { title: "Horror", url: MAIN_URL + "/m/genre/Horror" },
+        { title: "Si-Fi", url: MAIN_URL + "/m/genre/Science" },
+        { title: "Animation", url: MAIN_URL + "/m/type/Animation/2025" }
     ];
     
     var sections = {};
@@ -203,6 +203,10 @@ function parseMovieCards(html) {
 }
 
 async function search(query) {
+    if (!query) return [];
+    
+    // Trim query to remove leading/trailing spaces
+    query = query.trim();
     if (!query) return [];
     
     await login();
