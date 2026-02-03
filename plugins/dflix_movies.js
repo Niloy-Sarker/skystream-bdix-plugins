@@ -16,7 +16,7 @@ async function getManifest() {
         id: "com.niloy.dflix.movies",
         name: "Dflix Movies",
         internalName: "dflixmovies",
-        version: 2,
+        version: 3,
         description: "Dflix Movies Provider - Bangla, English, Hindi, Tamil, Animation Movies",
         language: "bn",
         tvTypes: ["Movie", "AnimeMovie"],
@@ -229,13 +229,17 @@ async function search(query) {
         
         if (html && typeof html === 'string') {
             // Parse search results - <div class='moviesearchiteam ps-1 mb-1'>
-            // Structure: <div class='moviesearchiteam...'><a href="/m/view/ID">...
-            var searchItemRegex = /<div class=['"]moviesearchiteam[^'"]*['"][^>]*>\s*<a href=['"](\/m\/view\/\d+)['"]>([\s\S]*?)<\/a>/g;
+            // Inside: <a href="/m/view/ID"> with <div class="searchtitle">
+            var searchItemRegex = /<div class=['"]moviesearchiteam[^'"]*['"][^>]*>([\s\S]*?)<\/a>/g;
             var match;
             
             while ((match = searchItemRegex.exec(html)) !== null) {
-                var url = MAIN_URL + match[1];
-                var itemHtml = match[2];
+                var itemHtml = match[1];
+                
+                // Extract URL - look for /m/view/ID
+                var urlMatch = /<a\s+href=['"](\/m\/view\/\d+)['"]/.exec(itemHtml);
+                if (!urlMatch) continue;
+                var url = MAIN_URL + urlMatch[1];
                 
                 // Extract title from searchtitle class
                 var titleMatch = /<div class=['"]searchtitle['"][^>]*>([^<]+)<\/div>/.exec(itemHtml);
