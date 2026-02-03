@@ -79,12 +79,14 @@ async function getHome() {
     await login();
     
     var categories = [
+        { title: "English", url: MAIN_URL + "/m/category/English" },
+        { title: "Bangla", url: MAIN_URL + "/m/category/Bangla" },
+        { title: "Hindi", url: MAIN_URL + "/m/category/Hindi" },
+        { title: "Tamil", url: MAIN_URL + "/m/category/Tamil" },
+        { title: "Animation", url: MAIN_URL + "/m/category/Animation" },
         { title: "Action", url: MAIN_URL + "/m/genre/Action" },
-        { title: "Adventure", url: MAIN_URL + "/m/genre/Adventure" },
         { title: "Comedy", url: MAIN_URL + "/m/genre/Comedy" },
-        { title: "Horror", url: MAIN_URL + "/m/genre/Horror" },
-        { title: "Si-Fi", url: MAIN_URL + "/m/genre/Science" },
-        { title: "Animation", url: MAIN_URL + "/m/type/Animation/2025" }
+        { title: "Horror", url: MAIN_URL + "/m/genre/Horror" }
     ];
     
     var sections = {};
@@ -139,7 +141,10 @@ async function getHome() {
 function parseMovieCards(html) {
     var items = [];
     
-    // Pattern to match movie cards: <div class="card">...</div></div>
+    // Pattern: <div class="card"><a class="cfocus" href="/m/view/ID">
+    // Inside: <span class="movie_details_span_end">quality</span>
+    // Then: <img src="..."> and <h3>title</h3> and <span class="movie_details_span" title="views">year</span>
+    
     var cardRegex = /<div class=["']card["']>([\s\S]*?)<\/div><\/div>/g;
     var match;
     
@@ -162,8 +167,8 @@ function parseMovieCards(html) {
         var yearMatch = /<span class=["']movie_details_span["'][^>]*title=["']views["'][^>]*>(\d{4})<\/span>/.exec(cardHtml);
         var year = yearMatch ? yearMatch[1] : "";
         
-        // Extract poster from img src
-        var posterMatch = /<img[^>]+src=["']([^"']+)["']/.exec(cardHtml);
+        // Extract poster from img src - require space before src to avoid matching inside onerror
+        var posterMatch = /<img[^>]*\ssrc=["']([^"']+)["']/.exec(cardHtml);
         var poster = "";
         if (posterMatch) {
             poster = posterMatch[1];
@@ -230,7 +235,7 @@ async function search(query) {
         if (html && typeof html === 'string') {
             // Parse search results - <div class='moviesearchiteam ps-1 mb-1'>
             // Inside: <a href="/m/view/ID"> with <div class="searchtitle">
-            var searchItemRegex = /<div class=['"]moviesearchiteam[^'"]*['"][^>]*>([\s\S]*?)<\/a>/g;
+            var searchItemRegex = /<div class=['"]moviesearchiteam[^'"]*['"][^>]*>([\s\S]*?)<\/div>\s*<\/div>/g;
             var match;
             
             while ((match = searchItemRegex.exec(html)) !== null) {
@@ -245,8 +250,8 @@ async function search(query) {
                 var titleMatch = /<div class=['"]searchtitle['"][^>]*>([^<]+)<\/div>/.exec(itemHtml);
                 var title = titleMatch ? titleMatch[1].trim() : "";
                 
-                // Extract poster from img src
-                var posterMatch = /<img[^>]+src=['"]([^'"]+)['"]/.exec(itemHtml);
+                // Extract poster from img src - require space before src to avoid matching inside onerror
+                var posterMatch = /<img[^>]*\ssrc=['"]([^'"]+)['"]/.exec(itemHtml);
                 var poster = "";
                 if (posterMatch) {
                     poster = posterMatch[1];
