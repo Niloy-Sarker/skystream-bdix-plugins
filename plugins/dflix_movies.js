@@ -235,14 +235,14 @@ async function search(query) {
         if (html && typeof html === 'string') {
             // Parse search results - <div class='moviesearchiteam ps-1 mb-1'>
             // Inside: <a href="/m/view/ID"> with <div class="searchtitle">
-            var searchItemRegex = /<div class=['"]moviesearchiteam[^'"]*['"][^>]*>([\s\S]*?)<\/div>\s*<\/div>/g;
+            var searchItemRegex = /<div class=['"]moviesearchiteam[^'"]*['"][^>]*>([\s\S]*?)<\/a>/g;
             var match;
             
             while ((match = searchItemRegex.exec(html)) !== null) {
                 var itemHtml = match[1];
                 
                 // Extract URL - look for /m/view/ID
-                var urlMatch = /<a\s+href=['"](\/m\/view\/\d+)['"]/.exec(itemHtml);
+                var urlMatch = /<a\s*href=['"](\/m\/view\/\d+)['"]/.exec(itemHtml);
                 if (!urlMatch) continue;
                 var url = MAIN_URL + urlMatch[1];
                 
