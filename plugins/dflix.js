@@ -15,13 +15,13 @@ var STORAGE_KEY_COOKIES = "dflix_movies_cookies";
 
 async function getManifest() {
     return {
-        id: "com.niloy.dflix.movies",
-        name: "Dflix Movies",
-        internalName: "dflixmovies",
+        id: "com.niloy.dflix",
+        name: "Dflix",
+        internalName: "dflix",
         version: 1,
-        description: "Dflix Movies Provider - English, Hindi, Bangla, Tamil, Animation, Others",
+        description: "Dflix Movies & Series Provider - Search for both Movies and Series",
         language: "bn",
-        tvTypes: ["Movie", "Animation"],
+        tvTypes: ["Movie", "Animation", "TvSeries"],
         baseUrl: MAIN_URL,
         iconUrl: "",
         hasSearch: true
@@ -241,70 +241,98 @@ async function search(query) {
     }
     
     var searchUrl = MAIN_URL + "/search";
-    var formData = "term=" + encodeURIComponent(query) + "&types=m";
-    
     var postHeaders = Object.assign({}, headers);
     postHeaders["Content-Type"] = "application/x-www-form-urlencoded";
     
+    var results = [];
+    
+    // Search for both movies and series in parallel
+    var movieFormData = "term=" + encodeURIComponent(query) + "&types=m";
+    var seriesFormData = "term=" + encodeURIComponent(query) + "&types=s";
+    
     try {
-        var res = await http_post(searchUrl, postHeaders, formData);
-        var html = res.body;
-        var movies = [];
+        var [movieRes, seriesRes] = await Promise.all([
+            http_post(searchUrl, postHeaders, movieFormData),
+            http_post(searchUrl, postHeaders, seriesFormData)
+        ]);
         
-        if (html && typeof html === 'string') {
-            // Parse search results - <div class='moviesearchiteam ps-1 mb-1'>
-            // Inside: <a href="/m/view/ID"> with <div class="searchtitle">
-            var searchItemRegex = /<div class=['"]moviesearchiteam[^'"]*['"][^>]*>([\s\S]*?)<\/a>/g;
-            var match;
-            
-            while ((match = searchItemRegex.exec(html)) !== null) {
-                var itemHtml = match[1];
-                
-                // Extract URL - look for /m/view/ID
-                var urlMatch = /<a\s+href=['"](\/m\/view\/\d+)['"]/.exec(itemHtml);
-                if (!urlMatch) continue;
-                var url = MAIN_URL + urlMatch[1];
-                
-                // Extract title from searchtitle class
-                var titleMatch = /<div class=['"]searchtitle['"][^>]*>([^<]+)<\/div>/.exec(itemHtml);
-                var title = titleMatch ? titleMatch[1].trim() : "";
-                
-                // Extract poster from img src - require space before src to avoid matching inside onerror
-                var posterMatch = /<img[^>]*\ssrc=['"]([^'"]+)['"]/.exec(itemHtml);
-                var poster = "";
-                if (posterMatch) {
-                    poster = posterMatch[1];
-                    // Skip blank_poster
-                    if (poster.includes('blank_poster.png')) {
-                        poster = "";
-                    }
-                }
-                
-                // Extract year from searchdetails
-                var yearMatch = /Year\s*:\s*(\d{4})/.exec(itemHtml);
-                var year = yearMatch ? yearMatch[1] : "";
-                
-                // Extract quality from searchdetails
-                var qualityMatch = /Quality:\s*([^<]+)/.exec(itemHtml);
-                var quality = qualityMatch ? qualityMatch[1].trim() : "";
-                
-                if (title) {
-                    movies.push({
-                        title: title,
-                        url: url,
-                        posterUrl: poster,
-                        year: year,
-                        quality: quality,
-                        isFolder: false
-                    });
-                }
-            }
+        // Parse movie results
+        if (movieRes && movieRes.body && typeof movieRes.body === 'string') {
+            var movieItems = parseSearchResults(movieRes.body, "movie");
+            results = results.concat(movieItems);
         }
         
-        return movies;
+        // Parse series results
+        if (seriesRes && seriesRes.body && typeof seriesRes.body === 'string') {
+            var seriesItems = parseSearchResults(seriesRes.body, "series");
+            results = results.concat(seriesItems);
+        }
+        
+        return results;
     } catch (e) {
         return [];
     }
+}
+
+function parseSearchResults(html, type) {
+    var items = [];
+    var urlPattern = type === "movie" ? /\/m\/view\/\d+/ : /\/s\/view\/\d+/;
+    
+    // Parse search results - <div class='moviesearchiteam ps-1 mb-1'>
+    // Inside: <a href="/m/view/ID"> or <a href="/s/view/ID"> with <div class="searchtitle">
+    var searchItemRegex = /<div class=['"]moviesearchiteam[^'"]*['"][^>]*>([\s\S]*?)<\/a>/g;
+    var match;
+    
+    while ((match = searchItemRegex.exec(html)) !== null) {
+        var itemHtml = match[1];
+        
+        // Extract URL - look for /m/view/ID or /s/view/ID
+        var urlMatch = /<a\s+href=['"]((\/m\/view\/\d+)|(\/s\/view\/\d+))['"]/.exec(itemHtml);
+        if (!urlMatch) continue;
+        
+        var urlPath = urlMatch[1];
+        // Verify it matches the expected type
+        if (!urlPattern.test(urlPath)) continue;
+        
+        var url = MAIN_URL + urlPath;
+        
+        // Extract title from searchtitle class
+        var titleMatch = /<div class=['"]searchtitle['"][^>]*>([^<]+)<\/div>/.exec(itemHtml);
+        var title = titleMatch ? titleMatch[1].trim() : "";
+        
+        // Extract poster from img src - require space before src to avoid matching inside onerror
+        var posterMatch = /<img[^>]*\ssrc=['"]([^'"]+)['"]/.exec(itemHtml);
+        var poster = "";
+        if (posterMatch) {
+            poster = posterMatch[1];
+            // Skip blank_poster
+            if (poster.includes('blank_poster.png')) {
+                poster = "";
+            }
+        }
+        
+        // Extract year from searchdetails
+        var yearMatch = /Year\s*:\s*(\d{4})/.exec(itemHtml);
+        var year = yearMatch ? yearMatch[1] : "";
+        
+        // Extract quality from searchdetails (mainly for movies)
+        var qualityMatch = /Quality:\s*([^<]+)/.exec(itemHtml);
+        var quality = qualityMatch ? qualityMatch[1].trim() : "";
+        
+        if (title) {
+            items.push({
+                title: title,
+                url: url,
+                posterUrl: poster,
+                year: year,
+                quality: quality,
+                type: type === "movie" ? "Movie" : "Series",
+                isFolder: type === "series"
+            });
+        }
+    }
+    
+    return items;
 }
 
 async function load(url) {
@@ -314,6 +342,9 @@ async function load(url) {
     if (loginCookie) {
         headers["Cookie"] = loginCookie;
     }
+    
+    // Check if this is a series URL
+    var isSeries = url.includes("/s/view/");
     
     try {
         var html = await _fetch(url, headers);
@@ -329,96 +360,11 @@ async function load(url) {
             };
         }
         
-        // Extract title from <h3> inside movie-detail-content
-        var titleMatch = /<div class="movie-detail-content[^"]*"[^>]*>[\s\S]*?<h3[^>]*>\s*([^<]+?)\s*<\/h3>/.exec(html);
-        var title = titleMatch ? titleMatch[1].trim() : "";
-        
-        // Alternative title extraction
-        if (!title) {
-            var altTitleMatch = /<h3[^>]*>\s*([^<]+?)\s*<\/h3>/.exec(html);
-            title = altTitleMatch ? altTitleMatch[1].trim() : "Unknown";
+        if (isSeries) {
+            return loadSeriesContent(html, url, headers);
+        } else {
+            return loadMovieContent(html, url);
         }
-        
-        // Extract poster from movie-detail-banner
-        var imgMatch = /<figure class="movie-detail-banner">[\s\S]*?<img[^>]+src=['"]([^'"]+)['"]/.exec(html);
-        var poster = "";
-        if (imgMatch) {
-            poster = imgMatch[1];
-            // Skip blank_poster
-            if (poster.includes('blank_poster.png')) {
-                poster = "";
-            }
-        }
-        
-        // Extract plot/storyline from <p class="storyline">
-        var plotMatch = /<p class=['"]storyline['"][^>]*>([\s\S]*?)<\/p>/.exec(html);
-        var plot = "";
-        if (plotMatch) {
-            // Clean the text - remove HTML tags and extra whitespace
-            plot = plotMatch[1]
-                .replace(/<[^>]+>/g, '') // Remove HTML tags
-                .replace(/\s+/g, ' ')     // Normalize whitespace
-                .replace(/\.{3,}/g, '...') // Normalize ellipsis
-                .trim();
-        }
-        
-        // Extract genres from ganre-wrapper
-        var genres = extractGenres(html);
-        
-        // Extract year from badge
-        var yearMatch = /Year\s*:\s*(\d{4})|<div class="badge[^"]*"[^>]*>(\d{4})<\/div>/.exec(html);
-        var year = 0;
-        if (yearMatch) {
-            year = parseInt(yearMatch[1] || yearMatch[2]) || 0;
-        }
-        
-        // Extract quality info
-        var qualityMatch = /<div class="badge badge-fill">([^<]+)<\/div>/.exec(html);
-        var quality = qualityMatch ? qualityMatch[1].trim() : "";
-        
-        // Extract download URL
-        var downloadMatch = /href="(https?:\/\/content\d*\.discoveryftp\.net[^"]+\.(?:mkv|mp4|avi)[^"]*)"/.exec(html);
-        var downloadUrl = downloadMatch ? downloadMatch[1] : "";
-        
-        // Extract browse URL for CDN
-        var browseMatch = /href="(http:\/\/cds\d*\.discoveryftp\.net\/Movies[^"]+)"/.exec(html);
-        var browseUrl = browseMatch ? browseMatch[1] : "";
-        
-        // Extract playlist URL
-        var playlistMatch = /href="(\/m\/playlist\/\d+)"/.exec(html);
-        var playlistUrl = playlistMatch ? MAIN_URL + playlistMatch[1] : "";
-        
-        // Extract actors
-        var actors = extractActors(html);
-        
-        // Use plot as description
-        var description = plot;
-        if (quality && !description.includes(quality)) {
-            description = description ? description + "\n\nQuality: " + quality : "Quality: " + quality;
-        }
-        
-        return {
-            title: title,
-            url: url,
-            description: description,
-            posterUrl: poster,
-            year: year,
-            quality: quality,
-            downloadUrl: downloadUrl,
-            browseUrl: browseUrl,
-            playlistUrl: playlistUrl,
-            genres: genres,
-            actors: actors,
-            // For movies, we return a single "episode" which is the movie itself
-            episodes: [{
-                name: title,
-                season: 1,
-                episode: 1,
-                url: downloadUrl || url,
-                isPlaying: true,
-                description: quality
-            }]
-        };
     } catch (e) {
         return {
             title: "Error",
@@ -429,6 +375,275 @@ async function load(url) {
             episodes: []
         };
     }
+}
+
+function loadMovieContent(html, url) {
+    // Extract title from <h3> inside movie-detail-content
+    var titleMatch = /<div class="movie-detail-content[^"]*"[^>]*>[\s\S]*?<h3[^>]*>\s*([^<]+?)\s*<\/h3>/.exec(html);
+    var title = titleMatch ? titleMatch[1].trim() : "";
+    
+    // Alternative title extraction
+    if (!title) {
+        var altTitleMatch = /<h3[^>]*>\s*([^<]+?)\s*<\/h3>/.exec(html);
+        title = altTitleMatch ? altTitleMatch[1].trim() : "Unknown";
+    }
+    
+    // Extract poster from movie-detail-banner
+    var imgMatch = /<figure class="movie-detail-banner">[\s\S]*?<img[^>]+src=['"]([^'"]+)['"]/.exec(html);
+    var poster = "";
+    if (imgMatch) {
+        poster = imgMatch[1];
+        // Skip blank_poster
+        if (poster.includes('blank_poster.png')) {
+            poster = "";
+        }
+    }
+    
+    // Extract plot/storyline from <p class="storyline">
+    var plotMatch = /<p class=['"]storyline['"][^>]*>([\s\S]*?)<\/p>/.exec(html);
+    var plot = "";
+    if (plotMatch) {
+        // Clean the text - remove HTML tags and extra whitespace
+        plot = plotMatch[1]
+            .replace(/<[^>]+>/g, '') // Remove HTML tags
+            .replace(/\s+/g, ' ')     // Normalize whitespace
+            .replace(/\.{3,}/g, '...') // Normalize ellipsis
+            .trim();
+    }
+    
+    // Extract genres from ganre-wrapper
+    var genres = extractGenres(html);
+    
+    // Extract year from badge
+    var yearMatch = /Year\s*:\s*(\d{4})|<div class="badge[^"]*"[^>]*>(\d{4})<\/div>/.exec(html);
+    var year = 0;
+    if (yearMatch) {
+        year = parseInt(yearMatch[1] || yearMatch[2]) || 0;
+    }
+    
+    // Extract quality info
+    var qualityMatch = /<div class="badge badge-fill">([^<]+)<\/div>/.exec(html);
+    var quality = qualityMatch ? qualityMatch[1].trim() : "";
+    
+    // Extract download URL
+    var downloadMatch = /href="(https?:\/\/content\d*\.discoveryftp\.net[^"]+\.(?:mkv|mp4|avi)[^"]*)"/.exec(html);
+    var downloadUrl = downloadMatch ? downloadMatch[1] : "";
+    
+    // Extract browse URL for CDN
+    var browseMatch = /href="(http:\/\/cds\d*\.discoveryftp\.net\/Movies[^"]+)"/.exec(html);
+    var browseUrl = browseMatch ? browseMatch[1] : "";
+    
+    // Extract playlist URL
+    var playlistMatch = /href="(\/m\/playlist\/\d+)"/.exec(html);
+    var playlistUrl = playlistMatch ? MAIN_URL + playlistMatch[1] : "";
+    
+    // Extract actors
+    var actors = extractActors(html);
+    
+    // Use plot as description
+    var description = plot;
+    if (quality && !description.includes(quality)) {
+        description = description ? description + "\n\nQuality: " + quality : "Quality: " + quality;
+    }
+    
+    return {
+        title: title,
+        url: url,
+        description: description,
+        posterUrl: poster,
+        year: year,
+        quality: quality,
+        downloadUrl: downloadUrl,
+        browseUrl: browseUrl,
+        playlistUrl: playlistUrl,
+        genres: genres,
+        actors: actors,
+        type: "Movie",
+        // For movies, we return a single "episode" which is the movie itself
+        episodes: [{
+            name: title,
+            season: 1,
+            episode: 1,
+            url: downloadUrl || url,
+            isPlaying: true,
+            description: quality
+        }]
+    };
+}
+
+async function loadSeriesContent(html, url, headers) {
+    // Extract title
+    var titleMatch = /<div class="movie-detail-content-test"[^>]*>[\s\S]*?<h3[^>]*>([^<]+)<\/h3>/.exec(html);
+    var title = titleMatch ? titleMatch[1].trim() : "";
+    
+    // Alternative title extraction
+    if (!title) {
+        var altTitleMatch = /<h3[^>]*>([^<]+)<\/h3>/.exec(html);
+        title = altTitleMatch ? altTitleMatch[1].trim() : "Unknown";
+    }
+    
+    // Extract poster - require space before src to avoid matching inside onerror
+    var imgMatch = /<div class=['"]movie-detail-banner['"][^>]*>[\s\S]*?<img[^>]*\ssrc=['"]([^'"]+)['"]/.exec(html);
+    var poster = "";
+    if (imgMatch) {
+        poster = imgMatch[1];
+        // Skip blank_poster
+        if (poster.includes('blank_poster.png')) {
+            poster = "";
+        }
+    }
+    
+    // Extract plot/storyline from <p class="storyline">
+    var plotMatch = /<p class=['"]storyline['"][^>]*>([\s\S]*?)<\/p>/.exec(html);
+    var plot = "";
+    if (plotMatch) {
+        // Clean the text - remove HTML tags and extra whitespace
+        plot = plotMatch[1]
+            .replace(/<[^>]+>/g, '') // Remove HTML tags
+            .replace(/\s+/g, ' ')     // Normalize whitespace
+            .trim();
+        
+        // Remove "Click Here" style text if present
+        if (plot.includes('Click Here For More Information')) {
+            plot = plot.split('Click Here')[0].trim();
+        }
+    }
+    
+    // Extract genres
+    var genres = extractGenres(html);
+    
+    // Extract actors
+    var actors = extractActors(html);
+    
+    // Extract seasons
+    var seasons = extractSeasons(html);
+    
+    // Fetch all episodes
+    var episodes = [];
+    if (seasons.length > 0) {
+        episodes = await fetchAllEpisodes(seasons, headers);
+    }
+    
+    return {
+        title: title,
+        url: url,
+        description: plot,
+        posterUrl: poster,
+        year: 0,
+        genres: genres,
+        actors: actors,
+        type: "Series",
+        episodes: episodes.map(function(ep) {
+            return {
+                name: ep.name,
+                season: ep.season,
+                episode: ep.episode,
+                url: ep.link,
+                isPlaying: true,
+                description: ep.description
+            };
+        })
+    };
+}
+
+function extractSeasons(html) {
+    var seasons = [];
+    
+    // Look for season table
+    var seasonTableMatch = /<table class="table mb-0"[^>]*>[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/.exec(html);
+    
+    if (seasonTableMatch) {
+        var seasonRegex = /<a\s+href="([^"]+)"[^>]*>/g;
+        var match;
+        
+        while ((match = seasonRegex.exec(seasonTableMatch[1])) !== null) {
+            seasons.push(match[1]);
+        }
+        
+        // Reverse to get proper order (oldest first)
+        seasons.reverse();
+    }
+    
+    return seasons;
+}
+
+async function fetchAllEpisodes(seasonUrls, headers) {
+    var allEpisodes = [];
+    
+    // Fetch all seasons in parallel
+    var promises = seasonUrls.map(async function(seasonUrl, index) {
+        var fullUrl = MAIN_URL + seasonUrl;
+        var currentSeasonNum = index + 1;
+        
+        try {
+            var html = await _fetch(fullUrl, headers);
+            return parseSeasonEpisodes(html, currentSeasonNum);
+        } catch (e) {
+            return [];
+        }
+    });
+    
+    var results = await Promise.all(promises);
+    
+    // Flatten all episodes
+    for (var i = 0; i < results.length; i++) {
+        var seasonEpisodes = results[i];
+        for (var j = 0; j < seasonEpisodes.length; j++) {
+            allEpisodes.push(seasonEpisodes[j]);
+        }
+    }
+    
+    // Sort episodes by season and episode number
+    allEpisodes.sort(function(a, b) {
+        if (a.season !== b.season) return a.season - b.season;
+        return a.episode - b.episode;
+    });
+    
+    return allEpisodes;
+}
+
+function parseSeasonEpisodes(html, seasonNum) {
+    var episodes = [];
+    var episodeNum = 0;
+    
+    // Parse episode cards: div.card.p-4
+    var episodeRegex = /<div class="card p-4"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/g;
+    var match;
+    
+    while ((match = episodeRegex.exec(html)) !== null) {
+        var episodeHtml = match[1];
+        episodeNum++;
+        
+        // Extract episode name from h4
+        var nameMatch = /<h4[^>]*>([^<]+)/.exec(episodeHtml);
+        var episodeName = nameMatch ? nameMatch[1].trim() : "Episode " + episodeNum;
+        
+        // Extract episode link from h5 > a
+        var linkMatch = /<h5[^>]*>[\s\S]*?<a[^>]+href="([^"]+)"/.exec(episodeHtml);
+        var episodeLink = linkMatch ? linkMatch[1] : "";
+        
+        // Extract episode description
+        var descMatch = /<div class="season_overview"[^>]*>[\s\S]*?<p[^>]*>([^<]*)<\/p>/.exec(episodeHtml);
+        var description = descMatch ? descMatch[1].trim() : "";
+        
+        // Extract episode image from parent's background style
+        var parentSearch = html.substring(Math.max(0, match.index - 500), match.index);
+        var bgMatch = /url\(['"]?([^'")\s]+)['"]?\)/.exec(parentSearch);
+        var episodeImage = bgMatch ? bgMatch[1] : "";
+        
+        if (episodeLink) {
+            episodes.push({
+                name: episodeName,
+                link: episodeLink,
+                season: seasonNum,
+                episode: episodeNum,
+                description: description,
+                image: episodeImage
+            });
+        }
+    }
+    
+    return episodes;
 }
 
 function extractGenres(html) {
