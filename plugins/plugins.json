@@ -23,7 +23,7 @@
     "tvTypes": ["Movie", "AnimeMovie"],
     "baseUrl": "https://dflix.discoveryftp.net",
     "iconUrl": "https://dflix.discoveryftp.net/favicon.ico",
-    "url": "https://raw.githubusercontent.com/niloy-sarker/skystream-bdix-plugins/refs/heads/release/plugins/dflix_movies.sky"
+    "url": "https://raw.githubusercontent.com/niloy-sarker/skystream-bdix-plugins/refs/heads/release/plugins/dflix.sky"
   },
   {
     "id": "com.niloy.dflix.series",
