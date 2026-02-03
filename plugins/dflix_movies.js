@@ -1,3 +1,5 @@
+// Dflix Movies Provider for Skystream
+// Ported from Kotlin CloudStream provider (DflixMoviesProvider.kt)
 
 var MAIN_URL = "https://dflix.discoveryftp.net";
 var loginCookie = null;
@@ -16,10 +18,10 @@ async function getManifest() {
         id: "com.niloy.dflix.movies",
         name: "Dflix Movies",
         internalName: "dflixmovies",
-        version: 3,
-        description: "Dflix Movies Provider - Bangla, English, Hindi, Tamil, Animation Movies",
+        version: 1,
+        description: "Dflix Movies Provider - English, Hindi, Bangla, Tamil, Animation, Others",
         language: "bn",
-        tvTypes: ["Movie", "AnimeMovie"],
+        tvTypes: ["Movie", "Animation"],
         baseUrl: MAIN_URL,
         iconUrl: "",
         hasSearch: true
@@ -79,14 +81,12 @@ async function getHome() {
     await login();
     
     var categories = [
-        { title: "English", url: MAIN_URL + "/m/category/English" },
-        { title: "Bangla", url: MAIN_URL + "/m/category/Bangla" },
-        { title: "Hindi", url: MAIN_URL + "/m/category/Hindi" },
-        { title: "Tamil", url: MAIN_URL + "/m/category/Tamil" },
-        { title: "Animation", url: MAIN_URL + "/m/category/Animation" },
-        { title: "Action", url: MAIN_URL + "/m/genre/Action" },
-        { title: "Comedy", url: MAIN_URL + "/m/genre/Comedy" },
-        { title: "Horror", url: MAIN_URL + "/m/genre/Horror" }
+        { title: "English", url: MAIN_URL + "/m/category/English/1" },
+        { title: "Hindi", url: MAIN_URL + "/m/category/Hindi/1" },
+        { title: "Bangla", url: MAIN_URL + "/m/category/Bangla/1" },
+        { title: "Tamil", url: MAIN_URL + "/m/category/Tamil/1" },
+        { title: "Animation", url: MAIN_URL + "/m/category/Animation/1" },
+        { title: "Others", url: MAIN_URL + "/m/category/Others/1" }
     ];
     
     var sections = {};
@@ -141,66 +141,89 @@ async function getHome() {
 function parseMovieCards(html) {
     var items = [];
     
-    // Pattern: <div class="card"><a class="cfocus" href="/m/view/ID">
+    // Movie cards structure: <div class="card"><a class="cfocus" href="/m/view/ID">
     // Inside: <span class="movie_details_span_end">quality</span>
-    // Then: <img src="..."> and <h3>title</h3> and <span class="movie_details_span" title="views">year</span>
+    // <div class="poster"><img src="poster_url">
+    // <div class="details"><h3>title</h3>
+    // <span class="movie_details_span">year</span>
     
-    var cardRegex = /<div class=["']card["']>([\s\S]*?)<\/div><\/div>/g;
+    var cardRegex = /<div class="card"><a class="cfocus" href="(\/m\/view\/\d+)"[^>]*>[\s\S]*?<img\s+src="([^"]+)"[^>]*>[\s\S]*?<\/div><\/a><div class="details"><h3[^>]*>([^<]+)<\/h3>[\s\S]*?<span class="movie_details_span"[^>]*>(\d{4})<\/span>/g;
     var match;
     
     while ((match = cardRegex.exec(html)) !== null) {
-        var cardHtml = match[1];
+        var url = MAIN_URL + match[1];
+        var poster = match[2];
+        var title = match[3].trim();
+        var year = match[4];
         
-        // Skip disabled cards
-        if (cardHtml.includes('disable')) continue;
-        
-        // Extract URL from the <a> tag
-        var urlMatch = /<a[^>]+href=["']([^"']+)["']/.exec(cardHtml);
-        if (!urlMatch) continue;
-        var url = MAIN_URL + urlMatch[1];
-        
-        // Extract title from h3 - handle whitespace
-        var titleMatch = /<h3[^>]*>([\s\S]*?)<\/h3>/.exec(cardHtml);
-        var title = titleMatch ? titleMatch[1].replace(/\s+/g, ' ').trim() : "";
-        
-        // Extract year from movie_details_span with title="views"
-        var yearMatch = /<span class=["']movie_details_span["'][^>]*title=["']views["'][^>]*>(\d{4})<\/span>/.exec(cardHtml);
-        var year = yearMatch ? yearMatch[1] : "";
-        
-        // Extract poster from img src - require space before src to avoid matching inside onerror
-        var posterMatch = /<img[^>]*\ssrc=["']([^"']+)["']/.exec(cardHtml);
-        var poster = "";
-        if (posterMatch) {
-            poster = posterMatch[1];
-            // If it's a relative URL, make it absolute
-            if (poster.startsWith('/')) {
-                poster = MAIN_URL + poster;
-            }
-            // Skip blank posters
-            if (poster.includes('blank_poster.png')) {
-                poster = "";
-            }
+        // Skip blank_poster
+        if (poster.includes('blank_poster.png')) {
+            poster = "";
         }
-        
-        // Extract quality tag from movie_details_span_end
-        var qualityMatch = /<span class=["']movie_details_span_end["'][^>]*>([^<]+)<\/span>/.exec(cardHtml);
-        var qualityText = qualityMatch ? qualityMatch[1].trim() : "";
-        
-        // Determine quality
-        var quality = getSearchQuality(qualityText);
-        
-        // Check for DUAL audio
-        var isDual = qualityText.toUpperCase().includes("DUAL");
         
         if (title) {
             items.push({
-                name: title + (year ? " (" + year + ")" : ""),
+                name: title,
                 link: url,
                 image: poster,
-                description: qualityText,
-                quality: quality,
-                dubStatus: isDual ? "Dubbed" : null
+                description: "",
+                year: year,
+                type: "Movie"
             });
+        }
+    }
+    
+    // If first regex didn't match, try alternative pattern
+    if (items.length === 0) {
+        // Alternative: Parse card by card
+        var simpleCardRegex = /<div class="card">[\s\S]*?<a[^>]+href="(\/m\/view\/\d+)"[\s\S]*?<img[^>]+src="([^"]+)"[\s\S]*?<h3[^>]*>([^<]+)<\/h3>[\s\S]*?<span class="movie_details_span"[^>]*>(\d{4})<\/span>/g;
+        
+        while ((match = simpleCardRegex.exec(html)) !== null) {
+            var url = MAIN_URL + match[1];
+            var poster = match[2];
+            var title = match[3].trim();
+            var year = match[4];
+            
+            if (poster.includes('blank_poster.png')) {
+                poster = "";
+            }
+            
+            if (title) {
+                items.push({
+                    name: title,
+                    link: url,
+                    image: poster,
+                    description: "",
+                    year: year,
+                    type: "Movie"
+                });
+            }
+        }
+    }
+    
+    // If still no items, try a more flexible approach
+    if (items.length === 0) {
+        var flexRegex = /href="(\/m\/view\/\d+)"[\s\S]*?<img[^>]+src="([^"]+)"[\s\S]*?<h3[^>]*>([^<]+)<\/h3>/g;
+        
+        while ((match = flexRegex.exec(html)) !== null) {
+            var url = MAIN_URL + match[1];
+            var poster = match[2];
+            var title = match[3].trim();
+            
+            if (poster.includes('blank_poster.png')) {
+                poster = "";
+            }
+            
+            if (title) {
+                items.push({
+                    name: title,
+                    link: url,
+                    image: poster,
+                    description: "",
+                    year: "",
+                    type: "Movie"
+                });
+            }
         }
     }
     
@@ -208,10 +231,6 @@ function parseMovieCards(html) {
 }
 
 async function search(query) {
-    if (!query) return [];
-    
-    // Trim query to remove leading/trailing spaces
-    query = query.trim();
     if (!query) return [];
     
     await login();
@@ -242,7 +261,7 @@ async function search(query) {
                 var itemHtml = match[1];
                 
                 // Extract URL - look for /m/view/ID
-                var urlMatch = /<a\s*href=['"](\/m\/view\/\d+)['"]/.exec(itemHtml);
+                var urlMatch = /<a\s+href=['"](\/m\/view\/\d+)['"]/.exec(itemHtml);
                 if (!urlMatch) continue;
                 var url = MAIN_URL + urlMatch[1];
                 
@@ -261,11 +280,21 @@ async function search(query) {
                     }
                 }
                 
+                // Extract year from searchdetails
+                var yearMatch = /Year\s*:\s*(\d{4})/.exec(itemHtml);
+                var year = yearMatch ? yearMatch[1] : "";
+                
+                // Extract quality from searchdetails
+                var qualityMatch = /Quality:\s*([^<]+)/.exec(itemHtml);
+                var quality = qualityMatch ? qualityMatch[1].trim() : "";
+                
                 if (title) {
                     movies.push({
                         title: title,
                         url: url,
                         posterUrl: poster,
+                        year: year,
+                        quality: quality,
                         isFolder: false
                     });
                 }
@@ -296,80 +325,99 @@ async function load(url) {
                 description: "Could not load content from server",
                 posterUrl: "",
                 year: 0,
-                episodes: []
+                streamUrl: ""
             };
         }
         
-        // Extract title
-        var titleMatch = /<div class=["']movie-detail-content["'][^>]*>[\s\S]*?<h3[^>]*>([^<]+)<\/h3>/.exec(html);
+        // Extract title from <h3> inside movie-detail-content
+        var titleMatch = /<div class="movie-detail-content[^"]*"[^>]*>[\s\S]*?<h3[^>]*>\s*([^<]+?)\s*<\/h3>/.exec(html);
         var title = titleMatch ? titleMatch[1].trim() : "";
         
         // Alternative title extraction
-        var altTitleMatch = /<h3[^>]*>([^<]+)<\/h3>/.exec(html);
-        var finalTitle = title || (altTitleMatch ? altTitleMatch[1].trim() : "Unknown");
+        if (!title) {
+            var altTitleMatch = /<h3[^>]*>\s*([^<]+?)\s*<\/h3>/.exec(html);
+            title = altTitleMatch ? altTitleMatch[1].trim() : "Unknown";
+        }
         
-        // Extract poster - require space before src to avoid matching inside onerror
-        var imgMatch = /<div class=['"]movie-detail-banner['"][^>]*>[\s\S]*?<img[^>]*\ssrc=['"]([^'"]+)['"]/.exec(html);
+        // Extract poster from movie-detail-banner
+        var imgMatch = /<figure class="movie-detail-banner">[\s\S]*?<img[^>]+src=['"]([^'"]+)['"]/.exec(html);
         var poster = "";
         if (imgMatch) {
             poster = imgMatch[1];
-            // Handle relative poster URLs
-            if (poster.startsWith('/')) {
-                poster = MAIN_URL + poster;
-            }
+            // Skip blank_poster
             if (poster.includes('blank_poster.png')) {
                 poster = "";
             }
         }
         
         // Extract plot/storyline from <p class="storyline">
-        var plotMatch = /<p class=["']storyline["'][^>]*>([\s\S]*?)<\/p>/.exec(html);
+        var plotMatch = /<p class=['"]storyline['"][^>]*>([\s\S]*?)<\/p>/.exec(html);
         var plot = "";
         if (plotMatch) {
             // Clean the text - remove HTML tags and extra whitespace
             plot = plotMatch[1]
                 .replace(/<[^>]+>/g, '') // Remove HTML tags
                 .replace(/\s+/g, ' ')     // Normalize whitespace
+                .replace(/\.{3,}/g, '...') // Normalize ellipsis
                 .trim();
-            
-            // Remove "Click Here" style text if present
-            if (plot.includes('Click Here For More Information')) {
-                plot = plot.split('Click Here')[0].trim();
-            }
         }
         
-        // Extract file size
-        var sizeMatch = /<span class=["']badge badge-fill["']>([^<]+)<\/span>/.exec(html);
-        var size = sizeMatch ? sizeMatch[1].trim() : "";
+        // Extract genres from ganre-wrapper
+        var genres = extractGenres(html);
         
-        // Extract direct video URL - support mkv, mp4, avi
-        var dataUrlMatch = /<a[^>]+href=["'](http[^"']+\.(?:mkv|mp4|avi)[^"']*)["']/.exec(html);
-        var dataUrl = dataUrlMatch ? dataUrlMatch[1] : "";
+        // Extract year from badge
+        var yearMatch = /Year\s*:\s*(\d{4})|<div class="badge[^"]*"[^>]*>(\d{4})<\/div>/.exec(html);
+        var year = 0;
+        if (yearMatch) {
+            year = parseInt(yearMatch[1] || yearMatch[2]) || 0;
+        }
         
-        // Extract browse URL for quality options
-        var browseMatch = /<a[^>]+href=["']([^"']+)["'][^>]*>[\s\S]*?Browse[\s\S]*?<\/a>/i.exec(html);
+        // Extract quality info
+        var qualityMatch = /<div class="badge badge-fill">([^<]+)<\/div>/.exec(html);
+        var quality = qualityMatch ? qualityMatch[1].trim() : "";
+        
+        // Extract download URL
+        var downloadMatch = /href="(https?:\/\/content\d*\.discoveryftp\.net[^"]+\.(?:mkv|mp4|avi)[^"]*)"/.exec(html);
+        var downloadUrl = downloadMatch ? downloadMatch[1] : "";
+        
+        // Extract browse URL for CDN
+        var browseMatch = /href="(http:\/\/cds\d*\.discoveryftp\.net\/Movies[^"]+)"/.exec(html);
         var browseUrl = browseMatch ? browseMatch[1] : "";
         
-        // Use plot as description (don't append genres)
+        // Extract playlist URL
+        var playlistMatch = /href="(\/m\/playlist\/\d+)"/.exec(html);
+        var playlistUrl = playlistMatch ? MAIN_URL + playlistMatch[1] : "";
+        
+        // Extract actors
+        var actors = extractActors(html);
+        
+        // Use plot as description
         var description = plot;
+        if (quality && !description.includes(quality)) {
+            description = description ? description + "\n\nQuality: " + quality : "Quality: " + quality;
+        }
         
         return {
-            title: finalTitle,
+            title: title,
             url: url,
             description: description,
             posterUrl: poster,
-            year: 0,
-            episodes: [
-                {
-                    name: finalTitle + (size ? " [" + size + "]" : ""),
-                    url: dataUrl || url,
-                    season: 1,
-                    episode: 1,
-                    posterUrl: poster,
-                    description: description,
-                    isPlaying: true
-                }
-            ]
+            year: year,
+            quality: quality,
+            downloadUrl: downloadUrl,
+            browseUrl: browseUrl,
+            playlistUrl: playlistUrl,
+            genres: genres,
+            actors: actors,
+            // For movies, we return a single "episode" which is the movie itself
+            episodes: [{
+                name: title,
+                season: 1,
+                episode: 1,
+                url: downloadUrl || url,
+                isPlaying: true,
+                description: quality
+            }]
         };
     } catch (e) {
         return {
@@ -384,14 +432,14 @@ async function load(url) {
 }
 
 function extractGenres(html) {
-    const genres = [];
-    const genreWrapperMatch = /<div class=["']ganre-wrapper[^"']*["']>([\s\S]*?)<\/div>/.exec(html);
+    var genres = [];
+    var genreWrapperMatch = /<div class="ganre-wrapper[^"]*">([\s\S]*?)<\/div>/.exec(html);
     
     if (genreWrapperMatch) {
-        const genreRegex = /<a[^>]*>([^<]+)<\/a>/g;
-        let match;
+        var genreRegex = /<a[^>]*>([^<]+)<\/a>/g;
+        var match;
         while ((match = genreRegex.exec(genreWrapperMatch[1])) !== null) {
-            const genre = match[1].replace(',', '').trim();
+            var genre = match[1].replace(',', '').trim();
             if (genre) {
                 genres.push(genre);
             }
@@ -402,53 +450,36 @@ function extractGenres(html) {
 }
 
 function extractActors(html) {
-    const actors = [];
-    const actorRegex = /<div class=["']col-lg-2["'][^>]*>([\s\S]*?)<\/div>/g;
-    let match;
+    var actors = [];
+    var actorRegex = /<div class="col-lg-2[^"]*"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/g;
+    var match;
     
     while ((match = actorRegex.exec(html)) !== null) {
-        const actorHtml = match[1];
+        var actorHtml = match[1];
         
-        const imgMatch = /<img[^>]+src=["']([^"']+)["'][^>]+alt=["']([^"']*)["']/.exec(actorHtml);
+        var imgMatch = /<img[^>]+src="([^"]+)"[^>]*class="img-fluid"[^>]*alt="([^"]*)"/.exec(actorHtml);
+        if (!imgMatch) {
+            imgMatch = /<img[^>]+src="([^"]+)"[^>]+alt="([^"]*)"/.exec(actorHtml);
+        }
+        
         if (imgMatch) {
-            const actorImg = imgMatch[1];
-            const actorName = imgMatch[2];
+            var actorImg = imgMatch[1];
+            var actorName = imgMatch[2];
             
-            const roleMatch = /<p class=["']text-center text-white["']>([^<]*)<\/p>/.exec(actorHtml);
-            const role = roleMatch ? roleMatch[1].trim() : "";
+            var roleMatch = /<p class="text-center[^"]*text-white[^"]*">([^<]*)<\/p>/.exec(actorHtml);
+            var role = roleMatch ? roleMatch[1].trim() : "";
             
-            actors.push({
-                name: actorName,
-                image: actorImg,
-                role: role
-            });
+            if (actorName) {
+                actors.push({
+                    name: actorName,
+                    image: actorImg,
+                    role: role
+                });
+            }
         }
     }
     
     return actors;
-}
-
-function extractQualityRecommendations(html, title, poster) {
-    const recommendations = [];
-    const badgeRegex = /<div class=["']badge-outline["'][^>]*>([\s\S]*?)<\/div>/.exec(html);
-    
-    if (badgeRegex) {
-        const linkRegex = /<a[^>]+href=["']([^"']+)["'][^>]*>([^<]+)<\/a>/g;
-        let match;
-        
-        while ((match = linkRegex.exec(badgeRegex[1])) !== null) {
-            const qualityUrl = MAIN_URL + match[1];
-            const qualityText = match[2].trim();
-            
-            recommendations.push({
-                name: title + " " + qualityText,
-                link: qualityUrl,
-                image: poster
-            });
-        }
-    }
-    
-    return recommendations;
 }
 
 async function loadStreams(url) {
@@ -459,6 +490,75 @@ async function loadStreams(url) {
         headers["Cookie"] = loginCookie;
     }
     
+    // Check if URL is already a direct stream link
+    if (url.match(/\.(mkv|mp4|avi)($|\?)/i)) {
+        return [{
+            url: url,
+            quality: "Default",
+            isM3u8: false,
+            headers: headers
+        }];
+    }
+    
+    // If it's a movie view URL, extract the stream from the page
+    if (url.includes("/m/view/")) {
+        try {
+            var html = await _fetch(url, headers);
+            var streams = [];
+            
+            if (!html || typeof html !== 'string') {
+                return [];
+            }
+            
+            // Try to find download link (main stream)
+            var downloadMatch = /href="(https?:\/\/content\d*\.discoveryftp\.net[^"]+\.(?:mkv|mp4|avi)[^"]*)"/.exec(html);
+            if (downloadMatch) {
+                // Extract quality from the badge
+                var qualityMatch = /<div class="badge badge-fill">([^<]+\|[^<]+)<\/div>/.exec(html);
+                var quality = "Default";
+                if (qualityMatch) {
+                    quality = qualityMatch[1].trim().split('|')[0].trim();
+                }
+                
+                streams.push({
+                    url: downloadMatch[1],
+                    quality: quality,
+                    isM3u8: false,
+                    headers: headers
+                });
+            }
+            
+            // Also check for alternative quality links
+            var altLinkMatch = /<a[^>]+href="(\/m\/view\/\d+)"[^>]+title="([^"]+)"[^>]*>([^<]*(?:4K|1080P|720P)[^<]*)<\/a>/gi;
+            var altMatch;
+            while ((altMatch = altLinkMatch.exec(html)) !== null) {
+                var altUrl = MAIN_URL + altMatch[1];
+                var altTitle = altMatch[2] || altMatch[3];
+                
+                // Fetch the alternative quality page to get its stream
+                try {
+                    var altHtml = await _fetch(altUrl, headers);
+                    var altDownloadMatch = /href="(https?:\/\/content\d*\.discoveryftp\.net[^"]+\.(?:mkv|mp4|avi)[^"]*)"/.exec(altHtml);
+                    if (altDownloadMatch && !streams.some(s => s.url === altDownloadMatch[1])) {
+                        streams.push({
+                            url: altDownloadMatch[1],
+                            quality: altTitle,
+                            isM3u8: false,
+                            headers: headers
+                        });
+                    }
+                } catch (e) {
+                    // Skip if we can't fetch alternative
+                }
+            }
+            
+            return streams;
+        } catch (e) {
+            return [];
+        }
+    }
+    
+    // Otherwise, try to fetch the page and extract stream
     try {
         var html = await _fetch(url, headers);
         var streams = [];
@@ -467,17 +567,28 @@ async function loadStreams(url) {
             return [];
         }
         
-        // Extract direct video URL - support mkv, mp4, avi
-        var dataUrlMatch = /<a[^>]+href=["'](http[^"']+\.(?:mkv|mp4|avi)[^"']*)["']/.exec(html);
-        var dataUrl = dataUrlMatch ? dataUrlMatch[1] : "";
-        
-        if (dataUrl) {
+        // Try to find video link
+        var streamMatch = /<a[^>]+href="(https?[^"]+\.(?:mkv|mp4|avi)[^"]*)"/.exec(html);
+        if (streamMatch) {
             streams.push({
-                url: dataUrl,
+                url: streamMatch[1],
                 quality: "Default",
                 isM3u8: false,
                 headers: headers
             });
+        }
+        
+        // Try alternative: look for any video source
+        if (streams.length === 0) {
+            var videoMatch = /(?:src|href)=["'](https?[^"']+\.(?:mkv|mp4|avi)[^"']*)["']/i.exec(html);
+            if (videoMatch) {
+                streams.push({
+                    url: videoMatch[1],
+                    quality: "Default",
+                    isM3u8: false,
+                    headers: headers
+                });
+            }
         }
         
         return streams;
@@ -508,38 +619,6 @@ async function _fetch(url, extraHeaders) {
     } else {
         throw "HTTP Error " + res.statusCode + " fetching " + url;
     }
-}
-
-// Helper function to determine search quality
-function getSearchQuality(check) {
-    if (!check) return null;
-    
-    var lower = check.toLowerCase();
-    
-    if (lower.includes("4k")) return "FourK";
-    if (lower.includes("web-r") || lower.includes("web-dl") || lower.includes("webrip")) return "WebRip";
-    if (lower.includes("br") || lower.includes("bluray") || lower.includes("blu-ray")) return "BlueRay";
-    if (lower.includes("hdts") || lower.includes("hdcam") || lower.includes("hdtc")) return "HdCam";
-    if (lower.includes("cam")) return "Cam";
-    if (lower.includes("hd") || lower.includes("1080p")) return "HD";
-    
-    return null;
-}
-
-// Helper function to get quality label from filename
-function getQualityLabel(fileName) {
-    var lower = fileName.toLowerCase();
-    
-    if (lower.includes("4k") && lower.includes("2160p")) return "4K UHD";
-    if (lower.includes("4k")) return "4K";
-    if (lower.includes("2160p")) return "4K UHD";
-    if (lower.includes("1080p") && lower.includes("ds4k")) return "1080p DS4K";
-    if (lower.includes("1080p")) return "1080p HD";
-    if (lower.includes("720p")) return "720p HD";
-    if (lower.includes("480p")) return "480p SD";
-    if (lower.includes("ds4k")) return "1080p DS4K";
-    
-    return "HD";
 }
 
 // Export public functions for plugin loader
